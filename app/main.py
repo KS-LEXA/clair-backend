@@ -20,7 +20,7 @@ app = FastAPI(title=settings.app_name, docs_url="/docs", redoc_url="/redoc", lif
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"], #React 애플리케이션의 주소와 포트 입력하기
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
