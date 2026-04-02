@@ -1,12 +1,24 @@
 from fastapi import APIRouter, Depends
+from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.core.security import get_current_user
 from app.models.user import User
-from app.schemas.auth import SignUpRequest, SignUpResponse, LoginRequest, TokenResponse, RefreshRequest, RefreshResponse, MyInfoResponse, UpdateNicknameRequest, ChangePasswordRequest
+from app.schemas.auth import (
+    SignUpRequest, SignUpResponse,
+    LoginRequest, TokenResponse,
+    RefreshRequest, RefreshResponse,
+    MyInfoResponse, UpdateNicknameRequest, ChangePasswordRequest,
+    SocialLoginResponse,
+)
 from app.schemas.contract import MessageResponse
-from app.services.auth_service import signup, login, refresh_access_token, update_nickname, change_password
+from app.services.auth_service import (
+    signup, login, refresh_access_token, update_nickname, change_password,
+    get_google_auth_url, google_login,
+    get_naver_auth_url, naver_login,
+    get_kakao_auth_url, kakao_login,
+)
 
 router = APIRouter()
 
@@ -34,16 +46,66 @@ def api_refresh(body: RefreshRequest, db: Session = Depends(get_db)):
 
 @router.get("/me", response_model=MyInfoResponse, summary="내 정보 조회")
 def api_my_info(user: User = Depends(get_current_user)):
-    return MyInfoResponse(id=user.id, email=user.email, nickname=user.nickname, created_at=user.created_at, updated_at=user.updated_at)
+    return MyInfoResponse(
+        id=user.id,
+        email=user.email,
+        nickname=user.nickname,
+        has_password=user.password_hash is not None,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+    )
 
 
 @router.patch("/me/nickname", response_model=MyInfoResponse, summary="닉네임 변경")
 def api_update_nickname(body: UpdateNicknameRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     updated = update_nickname(user, body.nickname, db)
-    return MyInfoResponse(id=updated.id, email=updated.email, nickname=updated.nickname, created_at=updated.created_at, updated_at=updated.updated_at)
+    return MyInfoResponse(
+        id=updated.id,
+        email=updated.email,
+        nickname=updated.nickname,
+        has_password=updated.password_hash is not None,
+        created_at=updated.created_at,
+        updated_at=updated.updated_at,
+    )
 
 
 @router.patch("/me/password", response_model=MessageResponse, summary="비밀번호 변경")
 def api_change_password(body: ChangePasswordRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     change_password(user=user, current_password=body.current_password, new_password=body.new_password, db=db)
     return MessageResponse(message="비밀번호가 변경되었습니다.")
+
+
+# ── Google ────────────────────────────────────────────────────────────────────
+
+@router.get("/google", summary="구글 소셜 로그인 시작")
+def api_google_login():
+    return RedirectResponse(url=get_google_auth_url())
+
+
+@router.get("/google/callback", response_model=SocialLoginResponse, summary="구글 소셜 로그인 콜백")
+def api_google_callback(code: str, db: Session = Depends(get_db)):
+    return google_login(code=code, db=db)
+
+
+# ── Naver ─────────────────────────────────────────────────────────────────────
+
+@router.get("/naver", summary="네이버 소셜 로그인 시작")
+def api_naver_login():
+    return RedirectResponse(url=get_naver_auth_url())
+
+
+@router.get("/naver/callback", response_model=SocialLoginResponse, summary="네이버 소셜 로그인 콜백")
+def api_naver_callback(code: str, state: str, db: Session = Depends(get_db)):
+    return naver_login(code=code, state=state, db=db)
+
+
+# ── Kakao ─────────────────────────────────────────────────────────────────────
+
+@router.get("/kakao", summary="카카오 소셜 로그인 시작")
+def api_kakao_login():
+    return RedirectResponse(url=get_kakao_auth_url())
+
+
+@router.get("/kakao/callback", response_model=SocialLoginResponse, summary="카카오 소셜 로그인 콜백")
+def api_kakao_callback(code: str, db: Session = Depends(get_db)):
+    return kakao_login(code=code, db=db)

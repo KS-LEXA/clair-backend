@@ -67,9 +67,19 @@ class MyInfoResponse(BaseModel):
     id: int
     email: str
     nickname: str
+    has_password: bool
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
+
+
+class SocialLoginResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user: "UserInfo"
+    is_new_user: bool
 
 
 class UpdateNicknameRequest(BaseModel):
