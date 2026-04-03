@@ -2,7 +2,9 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.models.chat import ChatSession, ChatMessage, MessageSender, MessageType
-from app.models.contract import Contract
+from app.models.contract import Contract, ContractStatus
+from app.models.analysis import ContractClause
+from app.integrations.ai_client import ai_client
 
 
 def create_session(user_id: int, db: Session, contract_id: int = None, title: str = "새 대화") -> ChatSession:
@@ -44,22 +46,97 @@ def get_messages(session_id: int, user_id: int, db: Session, skip: int = 0, limi
     return total, messages
 
 
-def send_message(session_id: int, user_id: int, content: str, message_type: str, db: Session) -> tuple:
+async def send_message(session_id: int, user_id: int, content: str, message_type: str, db: Session) -> tuple:
     session = get_session_by_id(session_id, user_id, db)
-    user_msg = ChatMessage(session_id=session_id, sender=MessageSender.USER,
-                           message_type=MessageType(message_type) if message_type else MessageType.QUESTION, content=content)
+
+    # 사용자 메시지를 먼저 저장 — AI 호출 실패해도 사용자 입력은 기록됨
+    user_msg = ChatMessage(
+        session_id=session_id,
+        sender=MessageSender.USER,
+        message_type=MessageType(message_type) if message_type else MessageType.QUESTION,
+        content=content,
+    )
     db.add(user_msg)
-    # TODO: 조서현 파트 - Gemini API / LangChain RAG 호출
-    ai_response = f"'{content}'에 대한 분석 결과입니다.\n\n(AI 모듈 연동 예정)"
-    ai_msg = ChatMessage(session_id=session_id, sender=MessageSender.AI, message_type=MessageType.ANSWER,
-                         content=ai_response, extra_data={"source_clauses": [], "note": "AI 연동 전 임시 응답"}
-)
+    db.commit()
+    db.refresh(user_msg)
+
+    # 계약서 연결 여부 및 분석 완료 여부 확인
+    if not session.contract_id:
+        # 계약서 없는 일반 채팅 — RAG 불가
+        ai_content = "계약서가 연결되지 않은 세션입니다. 세션 생성 시 계약서를 지정해주세요."
+        ai_extra = {}
+    else:
+        contract = db.query(Contract).filter(Contract.id == session.contract_id).first()
+        if not contract or contract.status != ContractStatus.COMPLETED:
+            # 분석 진행 중이거나 실패한 경우
+            ai_content = "아직 계약서 분석이 완료되지 않았습니다. 분석 완료 후 질문해주세요."
+            ai_extra = {}
+        else:
+            # 분석 완료 — clair-ai QA 호출
+            ai_content, ai_extra = await _call_qa(contract.id, content, db)
+
+    ai_msg = ChatMessage(
+        session_id=session_id,
+        sender=MessageSender.AI,
+        message_type=MessageType.ANSWER,
+        content=ai_content,
+        extra_data=ai_extra,    # evidence_clause_ids, evidence_clauses 포함
+    )
     db.add(ai_msg)
     session.updated_at = func.now()
     db.commit()
-    db.refresh(user_msg)
     db.refresh(ai_msg)
     return user_msg, ai_msg
+
+
+async def _call_qa(contract_id: int, question: str, db: Session) -> tuple[str, dict]:
+    """
+    clair-ai QA 엔드포인트 호출.
+
+    DB에서 조항 목록을 꺼내 AI에 함께 전달한다.
+    AI는 이 조항들을 RAG 컨텍스트로 사용해 답변을 생성하므로
+    OCR을 다시 실행할 필요가 없어 응답이 빠름 (보통 2~5초).
+
+    실패 시 예외를 삼키고 fallback 메시지를 반환 —
+    챗봇 오류로 전체 요청이 500으로 떨어지는 것을 방지.
+    """
+    # contract_clauses 테이블에서 해당 계약서 조항 전체 조회
+    clauses = db.query(ContractClause).filter(
+        ContractClause.contract_id == contract_id
+    ).order_by(ContractClause.order).all()
+
+    # AI에 전달할 형태로 직렬화 (clause_id가 evidence_clause_ids 반환에 사용됨)
+    clause_dicts = [
+        {"clause_id": c.clause_id, "title": c.title, "text": c.text}
+        for c in clauses
+    ]
+
+    try:
+        qa_resp = await ai_client.answer_question(
+            contract_id=contract_id,
+            question=question,
+            clauses=clause_dicts,
+        )
+
+        # AI가 반환한 evidence_clause_ids로 실제 조항 텍스트 조회
+        # 프론트에서 해당 조항을 하이라이트하거나 팝업으로 보여줄 때 사용
+        evidence_rows = db.query(ContractClause).filter(
+            ContractClause.contract_id == contract_id,
+            ContractClause.clause_id.in_(qa_resp.evidence_clause_ids),
+        ).all()
+
+        evidence_data = [
+            {"clause_id": c.clause_id, "title": c.title, "text": c.text[:300]}  # 300자 발췌
+            for c in evidence_rows
+        ]
+
+        return qa_resp.answer, {
+            "evidence_clause_ids": qa_resp.evidence_clause_ids,
+            "evidence_clauses": evidence_data,      # ChatMessageResponse.metadata에 담겨 반환됨
+        }
+
+    except Exception as e:
+        return "죄송합니다, 답변 생성 중 오류가 발생했습니다.", {"error": str(e)}
 
 
 def delete_session(session_id: int, user_id: int, db: Session) -> None:

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CLAIR Backend is a FastAPI-based AI contract analysis system (Korean-language app). It handles contract document upload, AI-powered analysis (Gemini), and chat-based Q&A (LangChain RAG). The backend uses MySQL with SQLAlchemy ORM and JWT-based authentication.
+CLAIR Backend is a FastAPI-based AI contract analysis system (Korean-language app). It handles contract document upload, AI-powered analysis (Gemini), and chat-based Q&A (LangChain RAG). The backend uses MySQL with SQLAlchemy ORM and JWT-based authentication with optional social login (Google, Naver, Kakao).
 
 ## Commands
 
@@ -34,7 +34,7 @@ The app follows a layered architecture: **API → Services → Models/DB**.
 
 - **[app/api/v1/](app/api/v1/)** — Route handlers only; no business logic. Three routers: `auth`, `contracts`, `chat`.
 - **[app/services/](app/services/)** — All business logic lives here. Services receive a SQLAlchemy `db` session and current user as arguments.
-- **[app/models/](app/models/)** — SQLAlchemy ORM models (`User`, `Contract`, `AnalysisResult`, `RiskClause`, `ChatSession`, `ChatMessage`).
+- **[app/models/](app/models/)** — SQLAlchemy ORM models (`User`, `SocialAccount`, `Contract`, `AnalysisResult`, `RiskClause`, `ChatSession`, `ChatMessage`).
 - **[app/schemas/](app/schemas/)** — Pydantic v2 request/response DTOs. Separate from models.
 - **[app/core/config.py](app/core/config.py)** — Pydantic Settings loaded from `.env`. Single `settings` singleton used throughout.
 - **[app/core/security.py](app/core/security.py)** — JWT creation/decoding, password hashing, and `get_current_user` FastAPI dependency.
@@ -44,9 +44,9 @@ The app follows a layered architecture: **API → Services → Models/DB**.
 
 ## Key Design Patterns
 
-**Authentication flow**: `OAuth2PasswordBearer` → `get_current_user` dependency extracts user from JWT Bearer token. Access tokens expire in 60 min, refresh tokens in 7 days.
+**Authentication flow**: `OAuth2PasswordBearer` → `get_current_user` dependency extracts user from JWT Bearer token. Access tokens expire in 60 min, refresh tokens in 7 days. Social login (Google/Naver/Kakao) uses OAuth2 authorization code flow — the callback endpoints exchange the code for tokens via `httpx`, then call `_social_login()` in [app/services/auth_service.py](app/services/auth_service.py) which upserts `SocialAccount` + `User` records and issues app JWTs. Social users have `password_hash=None`.
 
-**Contract file storage**: Uploaded files are stored under `UPLOAD_DIR` organized by date (`YYYY/MM/DD/`). The `stored_filename` in the DB is a UUID-based name; `original_filename` preserves the user-facing name.
+**Contract file storage**: Uploaded files are stored under `UPLOAD_DIR` organized by date (`YYYY/MM/DD/`). The `stored_filename` in the DB is a UUID-based name; `original_filename` preserves the user-facing name. Allowed formats: `.pdf,.png,.jpg,.jpeg,.txt,.docx`; max size defaults to 20 MB (configurable via `MAX_FILE_SIZE_MB`).
 
 **AI integration stubs**: `POST /api/v1/contracts/{id}/analyze` and `chat_service.send_message()` have `# TODO` placeholders where Gemini/LangChain calls will go. These are in [app/api/v1/contracts.py](app/api/v1/contracts.py) and [app/services/chat_service.py](app/services/chat_service.py).
 
@@ -58,7 +58,15 @@ Required in `.env`:
 ```
 DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
 UPLOAD_DIR=./uploads
+MAX_FILE_SIZE_MB=20
 SECRET_KEY
 GEMINI_API_KEY         # empty until AI integration is implemented
 CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+
+# Social login (leave empty to disable each provider)
+GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI
+NAVER_CLIENT_ID, NAVER_CLIENT_SECRET, NAVER_REDIRECT_URI
+KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET, KAKAO_REDIRECT_URI
 ```
+
+Default redirect URIs point to `http://localhost:8000/api/v1/auth/{provider}/callback`.
