@@ -5,6 +5,7 @@ clair-ai HTTP 서비스 클라이언트.
 서비스 레이어는 httpx나 AI 관련 타입을 직접 import하지 않고,
 이 클라이언트가 반환하는 ai_models.py 타입만 사용한다.
 """
+import os
 import httpx
 from app.core.config import settings
 from app.integrations.ai_models import AIAnalysisResponse, AIQAResponse
@@ -23,12 +24,13 @@ class AIServiceClient:
         document_id: str,   # str(contract.id) — AI 결과에 그대로 돌아옴
     ) -> AIAnalysisResponse:
         """계약서 전체 분석 요청. 응답까지 수십 초 걸릴 수 있음."""
+        abs_file_path = os.path.abspath(file_path)
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.post(
                 f"{self.base_url}/analyze",
                 json={
                     "contract_id": contract_id,
-                    "file_path": file_path,
+                    "file_path": abs_file_path,
                     "file_type": file_type,
                     "document_id": document_id,
                 },
