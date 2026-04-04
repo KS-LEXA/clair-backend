@@ -1,10 +1,17 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Query
+from fastapi import APIRouter, Depends, UploadFile, File, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.core.security import get_current_user
 from app.models.user import User
-from app.schemas.contract import ContractUploadResponse, ContractDetailResponse, ContractListResponse, ContractListItem, AnalysisResultResponse, RiskClauseResponse, MessageResponse
-from app.services.contract_service import upload_contract, get_contract_by_id, get_contracts_by_user, delete_contract
+from app.schemas.contract import (
+    ContractUploadResponse, ContractDetailResponse, ContractListResponse, ContractListItem,
+    AnalysisResultResponse, RiskClauseResponse, MessageResponse,
+    AnalyzeAcceptedResponse, ContractStatusResponse, ClauseResponse, ClauseListResponse,
+)
+from app.services.contract_service import (
+    upload_contract, get_contract_by_id, get_contracts_by_user, delete_contract,
+    trigger_analysis, analyze_contract_background, get_clauses,
+)
 
 router = APIRouter()
 
@@ -37,7 +44,8 @@ def api_get_contract(contract_id: int, user: User = Depends(get_current_user), d
     risk_clauses = None
     if contract.risk_clauses:
         risk_clauses = [RiskClauseResponse(id=rc.id, clause_number=rc.clause_number, original_text=rc.original_text,
-                                           risk_type=rc.risk_type, risk_level=rc.risk_level.value, explanation=rc.explanation)
+                                           risk_type=rc.risk_type, risk_level=rc.risk_level.value, explanation=rc.explanation,
+                                           evidence_clause_ids=rc.evidence_clause_ids, evidence_text=rc.evidence_text)
                         for rc in contract.risk_clauses]
     return ContractDetailResponse(id=contract.id, original_filename=contract.original_filename, file_size=contract.file_size,
                                   file_type=contract.file_type, status=contract.status.value, contract_type=contract.contract_type.value,
@@ -51,8 +59,41 @@ def api_delete_contract(contract_id: int, user: User = Depends(get_current_user)
     return MessageResponse(message="계약서가 삭제되었습니다.")
 
 
-@router.post("/{contract_id}/analyze", response_model=MessageResponse, summary="계약서 분석 요청")
-def api_request_analysis(contract_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@router.post("/{contract_id}/analyze", response_model=AnalyzeAcceptedResponse, status_code=202, summary="계약서 분석 요청")
+async def api_request_analysis(
+    contract_id: int,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    contract = trigger_analysis(contract_id, user.id, db)
+    background_tasks.add_task(analyze_contract_background, contract.id)
+    return AnalyzeAcceptedResponse(
+        message=f"'{contract.original_filename}' 분석이 요청되었습니다.",
+        status="pending",
+        poll_url=f"/api/v1/contracts/{contract_id}/status",
+    )
+
+
+@router.get("/{contract_id}/status", response_model=ContractStatusResponse, summary="분석 상태 조회")
+def api_get_analysis_status(contract_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     contract = get_contract_by_id(contract_id, user.id, db)
-    # TODO: 조서현 파트 - AI 분석 파이프라인 호출
-    return MessageResponse(message="분석 요청이 접수되었습니다.", detail=f"'{contract.original_filename}' 분석 시작 (AI 모듈 연동 예정)")
+    return ContractStatusResponse(
+        contract_id=contract.id,
+        status=contract.status.value,
+        contract_type=contract.contract_type.value,
+        analysis_started_at=contract.analysis_started_at,
+        analysis_completed_at=contract.analysis_completed_at,
+        error=contract.analysis_error,
+    )
+
+
+@router.get("/{contract_id}/clauses", response_model=ClauseListResponse, summary="조항 목록 조회")
+def api_get_clauses(contract_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    clauses = get_clauses(contract_id, user.id, db)
+    return ClauseListResponse(
+        contract_id=contract_id,
+        total=len(clauses),
+        clauses=[ClauseResponse(id=c.id, clause_id=c.clause_id, title=c.title, text=c.text,
+                                page_refs=c.page_refs, order=c.order) for c in clauses],
+    )

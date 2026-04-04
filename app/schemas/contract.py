@@ -60,6 +60,40 @@ class RiskClauseResponse(BaseModel):
     risk_type: str
     risk_level: str
     explanation: Optional[str] = None
+    evidence_clause_ids: Optional[List[str]] = None
+    evidence_text: Optional[str] = None
+    model_config = {"from_attributes": True}
+
+
+class ClauseResponse(BaseModel):
+    id: int
+    clause_id: str
+    title: Optional[str] = None
+    text: str
+    page_refs: Optional[List[int]] = None
+    order: int
+    model_config = {"from_attributes": True}
+
+
+class ClauseListResponse(BaseModel):
+    contract_id: int
+    total: int
+    clauses: List[ClauseResponse]
+
+
+class AnalyzeAcceptedResponse(BaseModel):
+    message: str
+    status: str
+    poll_url: str
+
+
+class ContractStatusResponse(BaseModel):
+    contract_id: int
+    status: str
+    contract_type: Optional[str] = None
+    analysis_started_at: Optional[datetime] = None
+    analysis_completed_at: Optional[datetime] = None
+    error: Optional[str] = None
     model_config = {"from_attributes": True}
 
 
