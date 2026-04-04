@@ -45,8 +45,8 @@ def api_delete_session(session_id: int, user: User = Depends(get_current_user), 
 
 
 @router.post("/sessions/{session_id}/messages", response_model=SendMessageResponse, summary="메시지 전송")
-def api_send_message(session_id: int, body: SendMessageRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    user_msg, ai_msg = send_message(session_id=session_id, user_id=user.id, content=body.content, message_type=body.message_type, db=db)
+async def api_send_message(session_id: int, body: SendMessageRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    user_msg, ai_msg = await send_message(session_id=session_id, user_id=user.id, content=body.content, message_type=body.message_type, db=db)
     return SendMessageResponse(
         user_message=ChatMessageResponse(id=user_msg.id, sender=user_msg.sender.value, message_type=user_msg.message_type.value,
                                          content=user_msg.content, metadata=user_msg.extra_data, created_at=user_msg.created_at),

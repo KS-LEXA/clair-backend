@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
 
     gemini_api_key: str = ""
+    ai_service_url: str = "http://localhost:8001"
+    ai_service_timeout: float = 120.0   # OCR+LLM 분석은 최대 2분 허용
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
 
     google_client_id: str = ""

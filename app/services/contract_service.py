@@ -1,11 +1,20 @@
 import os
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from datetime import datetime
 from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.config import settings
+from app.db.session import SessionLocal
 from app.models.contract import Contract, ContractStatus
+from app.models.analysis import AnalysisResult, RiskClause, ContractClause
+from app.integrations.ai_client import ai_client
+from app.integrations.mappers import (
+    ai_contract_type_to_enum,
+    ai_clauses_to_contract_clauses,
+    ai_risks_to_risk_clauses,
+    ai_analysis_to_analysis_result,
+)
 
 
 def _validate_file(file: UploadFile) -> None:
@@ -81,3 +90,98 @@ def delete_contract(contract_id: int, user_id: int, db: Session) -> None:
         os.remove(contract.file_path)
     db.delete(contract)
     db.commit()
+
+
+def get_clauses(contract_id: int, user_id: int, db: Session) -> list[ContractClause]:
+    """분석 완료된 계약서의 조항 목록 반환. 챗봇 RAG 및 프론트 조항 표시에 사용."""
+    get_contract_by_id(contract_id, user_id, db)  # 소유권 검증
+    return db.query(ContractClause).filter(
+        ContractClause.contract_id == contract_id
+    ).order_by(ContractClause.order).all()
+
+
+def trigger_analysis(contract_id: int, user_id: int, db: Session) -> Contract:
+    """
+    분석 요청 수락 단계.
+    상태를 PENDING으로 바꾸고 반환만 한다.
+    실제 AI 호출은 analyze_contract_background()가 담당.
+    """
+    contract = get_contract_by_id(contract_id, user_id, db)
+    if contract.status == ContractStatus.PROCESSING:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 분석 중입니다.")
+    contract.status = ContractStatus.PENDING
+    contract.analysis_error = None  # 재분석 시 이전 오류 초기화
+    db.commit()
+    db.refresh(contract)
+    return contract
+
+
+async def analyze_contract_background(contract_id: int) -> None:
+    """
+    FastAPI BackgroundTasks로 실행되는 AI 분석 함수.
+
+    주의: 이 함수는 HTTP 응답이 반환된 뒤 실행된다.
+    request의 db 세션은 이미 닫혀 있으므로,
+    SessionLocal()로 독립적인 DB 세션을 직접 열어야 한다.
+
+    흐름:
+      PENDING → PROCESSING → (AI 호출) → COMPLETED
+                                        → FAILED (예외 발생 시)
+    """
+    db = SessionLocal()
+    try:
+        contract = db.query(Contract).filter(Contract.id == contract_id).first()
+        if not contract:
+            return
+
+        # PROCESSING 전환 — 폴링 중인 프론트에 "진행 중" 상태 노출
+        contract.status = ContractStatus.PROCESSING
+        contract.analysis_started_at = datetime.now(timezone.utc)
+        db.commit()
+
+        started_at = datetime.now(timezone.utc)
+
+        # clair-ai 분석 요청 (OCR + 조항 분리 + 추출 + 요약 + 리스크)
+        ai_resp = await ai_client.analyze_contract(
+            contract_id=contract.id,
+            file_path=contract.file_path,
+            file_type=contract.file_type,
+            document_id=str(contract.id),
+        )
+        duration = int((datetime.now(timezone.utc) - started_at).total_seconds())
+
+        # 재분석 케이스: 이전 분석 데이터 삭제 후 새로 저장
+        db.query(AnalysisResult).filter(AnalysisResult.contract_id == contract_id).delete()
+        db.query(RiskClause).filter(RiskClause.contract_id == contract_id).delete()
+        db.query(ContractClause).filter(ContractClause.contract_id == contract_id).delete()
+
+        # 조항 먼저 저장 — RiskClause.evidence_clause_ids가 이 clause_id를 참조하므로 순서 중요
+        clause_rows = ai_clauses_to_contract_clauses(ai_resp.clauses, contract_id)
+        db.add_all(clause_rows)
+
+        # 분석 결과 저장
+        analysis = ai_analysis_to_analysis_result(ai_resp, contract_id, duration_seconds=duration)
+        db.add(analysis)
+
+        # 위험 조항 저장
+        risk_rows = ai_risks_to_risk_clauses(ai_resp.risks, contract_id)
+        db.add_all(risk_rows)
+
+        # 계약서 상태 업데이트
+        contract.status = ContractStatus.COMPLETED
+        contract.contract_type = ai_contract_type_to_enum(ai_resp.extraction.contract_type.value or "unknown")
+        contract.extracted_text = ai_resp.ocr_raw_text  # 하위 호환 — 단일 텍스트 필드
+        contract.ocr_pages = ai_resp.ocr_pages          # 페이지별 OCR 결과
+        contract.analysis_completed_at = datetime.now(timezone.utc)
+        db.commit()
+
+    except Exception as e:
+        db.rollback()
+        # 실패 사유를 DB에 기록 — 프론트가 GET /status로 확인 가능
+        contract = db.query(Contract).filter(Contract.id == contract_id).first()
+        if contract:
+            contract.status = ContractStatus.FAILED
+            contract.analysis_error = str(e)
+            db.commit()
+    finally:
+        db.close()  # BackgroundTask는 request 생명주기 밖이므로 반드시 명시적으로 닫아야 함
