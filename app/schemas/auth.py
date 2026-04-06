@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
 from datetime import datetime
 from typing import Optional
 
@@ -7,6 +7,7 @@ class SignUpRequest(BaseModel):
     email: EmailStr
     nickname: str
     password: str
+    password_confirm: str
 
     @field_validator("nickname")
     @classmethod
@@ -22,6 +23,12 @@ class SignUpRequest(BaseModel):
         if len(v) < 8:
             raise ValueError("비밀번호는 8자 이상이어야 합니다.")
         return v
+
+    @model_validator(mode="after")
+    def passwords_match(self):
+        if self.password != self.password_confirm:
+            raise ValueError("비밀번호가 일치하지 않습니다.")
+        return self
 
 
 class SignUpResponse(BaseModel):

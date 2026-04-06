@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 clair-ai HTTP 서비스 클라이언트.
 

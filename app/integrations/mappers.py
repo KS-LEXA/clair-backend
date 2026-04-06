@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 AI 응답 → ORM 객체 변환 순수 함수 모음.
 

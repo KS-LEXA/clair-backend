@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 clair-ai 서비스가 반환하는 JSON 응답 구조를 Pydantic으로 정의.
 
