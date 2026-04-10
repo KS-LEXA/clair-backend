@@ -9,11 +9,11 @@ from app.models.user import User
 from app.models.social_account import SocialAccount
 
 
-def signup(email: str, nickname: str, password: str, db: Session) -> User:
+def signup(email: str, nickname: str, password: str, db: Session, marketing_agreed: bool = False) -> User:
     existing = db.query(User).filter(User.email == email).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 가입된 이메일입니다.")
-    user = User(email=email, nickname=nickname.strip(), password_hash=hash_password(password))
+    user = User(email=email, nickname=nickname.strip(), password_hash=hash_password(password), marketing_agreed=marketing_agreed)
     db.add(user)
     db.commit()
     db.refresh(user)
