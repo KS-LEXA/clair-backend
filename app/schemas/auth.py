@@ -8,6 +8,7 @@ class SignUpRequest(BaseModel):
     nickname: str
     password: str
     password_confirm: str
+    marketing_agreed: bool = False
 
     @field_validator("nickname")
     @classmethod
@@ -35,6 +36,7 @@ class SignUpResponse(BaseModel):
     id: int
     email: str
     nickname: str
+    marketing_agreed: bool
     created_at: datetime
     message: str = "회원가입이 완료되었습니다."
     model_config = {"from_attributes": True}
@@ -75,6 +77,7 @@ class MyInfoResponse(BaseModel):
     email: str
     nickname: str
     has_password: bool
+    marketing_agreed: bool
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}

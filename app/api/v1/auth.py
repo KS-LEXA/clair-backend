@@ -25,8 +25,8 @@ router = APIRouter()
 
 @router.post("/signup", response_model=SignUpResponse, status_code=201, summary="회원가입")
 def api_signup(body: SignUpRequest, db: Session = Depends(get_db)):
-    user = signup(email=body.email, nickname=body.nickname, password=body.password, db=db)
-    return SignUpResponse(id=user.id, email=user.email, nickname=user.nickname, created_at=user.created_at)
+    user = signup(email=body.email, nickname=body.nickname, password=body.password, db=db, marketing_agreed=body.marketing_agreed)
+    return SignUpResponse(id=user.id, email=user.email, nickname=user.nickname, marketing_agreed=user.marketing_agreed, created_at=user.created_at)
 
 
 @router.post("/login", summary="로그인 (Swagger 자물쇠 겸용)")
@@ -51,6 +51,7 @@ def api_my_info(user: User = Depends(get_current_user)):
         email=user.email,
         nickname=user.nickname,
         has_password=user.password_hash is not None,
+        marketing_agreed=user.marketing_agreed,
         created_at=user.created_at,
         updated_at=user.updated_at,
     )
@@ -64,6 +65,7 @@ def api_update_nickname(body: UpdateNicknameRequest, user: User = Depends(get_cu
         email=updated.email,
         nickname=updated.nickname,
         has_password=updated.password_hash is not None,
+        marketing_agreed=updated.marketing_agreed,
         created_at=updated.created_at,
         updated_at=updated.updated_at,
     )

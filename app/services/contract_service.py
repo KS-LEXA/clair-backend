@@ -17,6 +17,8 @@ from app.integrations.mappers import (
     ai_risks_to_risk_clauses,
     ai_analysis_to_analysis_result,
 )
+from app.models.notification import NotificationType
+from app.services.notification_service import create_notification
 
 
 def _validate_file(file: UploadFile) -> None:
@@ -177,6 +179,15 @@ async def analyze_contract_background(contract_id: int) -> None:
         contract.analysis_completed_at = datetime.now(timezone.utc)
         db.commit()
 
+        # 분석 완료 알림
+        create_notification(
+            user_id=contract.user_id,
+            title=f"'{contract.original_filename}' 분석이 완료되었습니다.",
+            db=db,
+            notification_type=NotificationType.ANALYSIS_COMPLETE,
+            contract_id=contract.id,
+        )
+
     except Exception as e:
         db.rollback()
         # 실패 사유를 DB에 기록 — 프론트가 GET /status로 확인 가능
@@ -185,5 +196,14 @@ async def analyze_contract_background(contract_id: int) -> None:
             contract.status = ContractStatus.FAILED
             contract.analysis_error = str(e)
             db.commit()
+            # 분석 실패 알림
+            create_notification(
+                user_id=contract.user_id,
+                title=f"'{contract.original_filename}' 분석에 실패했습니다.",
+                db=db,
+                notification_type=NotificationType.ANALYSIS_FAILED,
+                content=str(e),
+                contract_id=contract.id,
+            )
     finally:
         db.close()  # BackgroundTask는 request 생명주기 밖이므로 반드시 명시적으로 닫아야 함
