@@ -6,9 +6,9 @@ AI 응답 → ORM 객체 변환 순수 함수 모음.
 DB I/O 없음. 변환 로직만 담당.
 서비스 레이어가 이 함수들을 호출해 ORM 객체를 만든 뒤 db.add()한다.
 """
-from app.integrations.ai_models import AIAnalysisResponse, AIRiskResult, AIClause
+from app.integrations.ai_models import AIAnalysisResponse, AIRiskResult, AIClause, AIComplianceResult
 from app.models.contract import ContractType
-from app.models.analysis import AnalysisResult, RiskClause, ContractClause, RiskLevel
+from app.models.analysis import AnalysisResult, RiskClause, ContractClause, RiskLevel, ComplianceResult
 
 # clair-ai가 반환하는 contract_type 문자열 → ContractType Enum 변환 테이블
 # AI 출력값이 추가될 경우 여기에만 추가하면 됨
@@ -71,6 +71,25 @@ def ai_risks_to_risk_clauses(risks: list[AIRiskResult], contract_id: int) -> lis
             )
         )
     return rows
+
+
+def ai_compliance_to_compliance_results(
+    compliance: list[AIComplianceResult],
+    contract_id: int,
+) -> list[ComplianceResult]:
+    """AIComplianceResult 리스트 → ComplianceResult ORM 객체 리스트."""
+    return [
+        ComplianceResult(
+            contract_id=contract_id,
+            clause_id=c.clause_id,
+            clause_title=c.clause_title,
+            clause_text=c.clause_text,
+            status=c.status,
+            reason=c.reason,
+            law_references=[ref.model_dump() for ref in c.law_references],
+        )
+        for c in compliance
+    ]
 
 
 def ai_analysis_to_analysis_result(
