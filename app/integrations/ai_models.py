@@ -66,7 +66,29 @@ class AIAnalysisResponse(BaseModel):
     detected_objects: list[AIVisionObject] = []
     ocr_raw_text: str = ""              # OCR 원문 (정제 전)
     ocr_pages: list[dict] = []          # [{page_index, text}] 페이지별 텍스트
+    compliance: list[AIComplianceResult] = []  # 법령 준수 검사 결과
 
+
+# 법령 준수 검사 근거 법령 1건
+class AILawReference(BaseModel):
+    law_name: str           # ex) "근로기준법"
+    article_no: str         # ex) "제56조"
+    article_title: str      # ex) "연장·야간 및 휴일 근로"
+    content: str            # 조문 내용
+    similarity: float = 0.0 # 벡터 유사도 점수
+
+
+# 법령 준수 검사 결과 1건 (조항 단위)
+class AIComplianceResult(BaseModel):
+    clause_id: str                          # ContractClause.clause_id 참조
+    clause_title: Optional[str] = None
+    clause_text: str
+    status: str                             # "위반" | "주의" | "적합" | "검토불가"
+    reason: str                             # 판단 이유
+    law_references: list[AILawReference] = []
+
+
+# POST /analyze 전체 응답에 compliance 필드 추가됨 (하단 AIAnalysisResponse 참조)
 
 # POST /qa 응답 — 질의응답 결과
 class AIQAResponse(BaseModel):

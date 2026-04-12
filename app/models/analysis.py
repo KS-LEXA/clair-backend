@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, JSON, ForeignKey, Enum, func, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Text, JSON, ForeignKey, Enum, Float, func, UniqueConstraint
 from sqlalchemy.orm import relationship
 import enum
 from app.db.session import Base
@@ -95,3 +95,26 @@ class RiskClause(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     contract = relationship("Contract", back_populates="risk_clauses")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ComplianceResult: 조항별 법령 준수 검사 결과
+# clair-ai /analyze 응답의 compliance[] 배열을 행 단위로 저장
+# ──────────────────────────────────────────────────────────────────────────────
+class ComplianceResult(Base):
+    __tablename__ = "compliance_results"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    contract_id = Column(Integer, ForeignKey("contracts.id", ondelete="CASCADE"), nullable=False, index=True)
+    # ContractClause.clause_id 참조 — 프론트에서 조항 하이라이트에 사용
+    clause_id = Column(String(50), nullable=False)
+    clause_title = Column(String(500), nullable=True)
+    clause_text = Column(Text, nullable=False)
+    # 준수 상태: 위반 | 주의 | 적합 | 검토불가
+    status = Column(String(20), nullable=False)
+    reason = Column(Text, nullable=True)
+    # 근거 법령 목록 JSON ex) [{"law_name": "근로기준법", "article_no": "제56조", ...}]
+    law_references = Column(JSON, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    contract = relationship("Contract", back_populates="compliance_results")
