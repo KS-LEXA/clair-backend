@@ -1,5 +1,5 @@
 from app.db.session import engine, Base
-from app.models import user, contract, analysis, chat, social_account, notification  # noqa: F401
+from app.models import user, contract, analysis, chat, social_account, notification, password_reset  # noqa: F401
 
 
 def init_db():

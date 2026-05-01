@@ -38,6 +38,17 @@ class Settings(BaseSettings):
     kakao_client_secret: str = ""
     kakao_redirect_uri: str = "http://localhost:8000/api/v1/auth/kakao/callback"
 
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    mail_from: str = ""
+    mail_from_name: str = "CLAIR"
+
+    frontend_base_url: str = "http://localhost:5173"
+    password_reset_path: str = "/password-reset"
+    password_reset_token_expire_minutes: int = 30
+
     @property
     def database_url(self) -> str:
         return f"mysql+pymysql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}?charset=utf8mb4"

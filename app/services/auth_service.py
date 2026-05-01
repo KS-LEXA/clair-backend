@@ -1,5 +1,7 @@
+import hashlib
 import secrets
-from urllib.parse import urlencode
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode, quote
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 import httpx
@@ -7,6 +9,8 @@ from app.core.config import settings
 from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token, decode_token
 from app.models.user import User
 from app.models.social_account import SocialAccount
+from app.models.password_reset import PasswordResetToken
+from app.integrations.email_client import send_email
 
 
 def signup(email: str, nickname: str, password: str, db: Session, marketing_agreed: bool = False) -> User:
@@ -60,6 +64,79 @@ def change_password(user: User, current_password: str, new_password: str, db: Se
     if current_password == new_password:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="새 비밀번호가 현재 비밀번호와 동일합니다.")
     user.password_hash = hash_password(new_password)
+    db.commit()
+
+
+# ── 비밀번호 재설정 (이메일 링크 방식) ────────────────────────────────────────
+
+def _hash_token(raw_token: str) -> str:
+    """토큰은 항상 SHA-256 해시 형태로 DB에 저장 — DB 유출 시 raw 토큰 노출 방지."""
+    return hashlib.sha256(raw_token.encode()).hexdigest()
+
+
+async def request_password_reset(email: str, db: Session) -> None:
+    """
+    이메일로 재설정 링크 발송.
+    보안상 사용자 존재 여부는 응답으로 노출하지 않음 — 호출자는 항상 동일한 응답.
+    소셜 전용 계정도 조용히 무시 (메일에서 "소셜 로그인 사용해주세요" 같은 정보 노출 X).
+    """
+    user = db.query(User).filter(User.email == email).first()
+    if not user or not user.password_hash:
+        return  # 조용히 무시
+
+    # 충분히 긴 URL-safe 토큰 — raw는 메일에만, DB엔 해시만
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = _hash_token(raw_token)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.password_reset_token_expire_minutes)
+
+    db.add(PasswordResetToken(user_id=user.id, token_hash=token_hash, expires_at=expires_at))
+    db.commit()
+
+    reset_url = f"{settings.frontend_base_url.rstrip('/')}{settings.password_reset_path}?token={quote(raw_token)}"
+    await send_email(
+        to=user.email,
+        subject="[CLAIR] 비밀번호 재설정 안내",
+        template="password_reset.html",
+        context={
+            "nickname": user.nickname,
+            "reset_url": reset_url,
+            "expire_minutes": settings.password_reset_token_expire_minutes,
+        },
+    )
+
+
+def _find_valid_token(raw_token: str, db: Session) -> PasswordResetToken:
+    token_hash = _hash_token(raw_token)
+    record = db.query(PasswordResetToken).filter(PasswordResetToken.token_hash == token_hash).first()
+    if not record:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="유효하지 않은 토큰입니다.")
+    if record.used_at is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="이미 사용된 토큰입니다.")
+
+    expires_at = record.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="만료된 토큰입니다. 비밀번호 재설정을 다시 요청해주세요.")
+
+    return record
+
+
+def verify_reset_token(raw_token: str, db: Session) -> User:
+    """프론트엔드가 재설정 페이지 진입 시 토큰 유효성 사전 검증용."""
+    record = _find_valid_token(raw_token, db)
+    return record.user
+
+
+def confirm_password_reset(raw_token: str, new_password: str, db: Session) -> None:
+    """토큰 검증 + 비밀번호 변경 + 토큰 1회 사용 처리."""
+    record = _find_valid_token(raw_token, db)
+    user = record.user
+    if not user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="사용자를 찾을 수 없습니다.")
+
+    user.password_hash = hash_password(new_password)
+    record.used_at = datetime.now(timezone.utc)
     db.commit()
 
 
