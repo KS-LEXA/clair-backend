@@ -78,3 +78,5 @@ class Contract(Base):
     risk_clauses = relationship("RiskClause", back_populates="contract", cascade="all, delete-orphan")
     # 계약 조항 (1:N 관계)
     clauses = relationship("ContractClause", back_populates="contract", cascade="all, delete-orphan")
+    # 법령 준수 검사 결과 (1:N 관계)
+    compliance_results = relationship("ComplianceResult", back_populates="contract", cascade="all, delete-orphan")

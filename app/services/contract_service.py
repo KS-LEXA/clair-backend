@@ -9,13 +9,14 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.contract import Contract, ContractStatus
-from app.models.analysis import AnalysisResult, RiskClause, ContractClause
+from app.models.analysis import AnalysisResult, RiskClause, ContractClause, ComplianceResult
 from app.integrations.ai_client import ai_client
 from app.integrations.mappers import (
     ai_contract_type_to_enum,
     ai_clauses_to_contract_clauses,
     ai_risks_to_risk_clauses,
     ai_analysis_to_analysis_result,
+    ai_compliance_to_compliance_results,
 )
 from app.models.notification import NotificationType
 from app.services.notification_service import create_notification
@@ -158,6 +159,7 @@ async def analyze_contract_background(contract_id: int) -> None:
         db.query(AnalysisResult).filter(AnalysisResult.contract_id == contract_id).delete()
         db.query(RiskClause).filter(RiskClause.contract_id == contract_id).delete()
         db.query(ContractClause).filter(ContractClause.contract_id == contract_id).delete()
+        db.query(ComplianceResult).filter(ComplianceResult.contract_id == contract_id).delete()
 
         # 조항 먼저 저장 — RiskClause.evidence_clause_ids가 이 clause_id를 참조하므로 순서 중요
         clause_rows = ai_clauses_to_contract_clauses(ai_resp.clauses, contract_id)
@@ -170,6 +172,11 @@ async def analyze_contract_background(contract_id: int) -> None:
         # 위험 조항 저장
         risk_rows = ai_risks_to_risk_clauses(ai_resp.risks, contract_id)
         db.add_all(risk_rows)
+
+        # 법령 준수 검사 결과 저장
+        if ai_resp.compliance:
+            compliance_rows = ai_compliance_to_compliance_results(ai_resp.compliance, contract_id)
+            db.add_all(compliance_rows)
 
         # 계약서 상태 업데이트
         contract.status = ContractStatus.COMPLETED
