@@ -38,7 +38,17 @@ class Settings(BaseSettings):
     kakao_client_secret: str = ""
     kakao_redirect_uri: str = "http://localhost:8000/api/v1/auth/kakao/callback"
 
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    mail_from: str = ""
+    mail_from_name: str = "CLAIR"
+
     frontend_base_url: str = "http://localhost:5173"
+    password_reset_path: str = "/password-reset"
+    password_reset_token_expire_minutes: int = 30
+
     share_path: str = "/share"
     share_token_default_expire_days: int = 7
     share_access_token_expire_minutes: int = 60

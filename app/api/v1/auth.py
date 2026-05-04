@@ -11,10 +11,12 @@ from app.schemas.auth import (
     RefreshRequest, RefreshResponse,
     MyInfoResponse, UpdateNicknameRequest, ChangePasswordRequest,
     SocialLoginResponse,
+    PasswordResetRequest, PasswordResetConfirmRequest, PasswordResetVerifyResponse,
 )
 from app.schemas.contract import MessageResponse
 from app.services.auth_service import (
     signup, login, refresh_access_token, update_nickname, change_password,
+    request_password_reset, verify_reset_token, confirm_password_reset,
     get_google_auth_url, google_login,
     get_naver_auth_url, naver_login,
     get_kakao_auth_url, kakao_login,
@@ -75,6 +77,27 @@ def api_update_nickname(body: UpdateNicknameRequest, user: User = Depends(get_cu
 def api_change_password(body: ChangePasswordRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     change_password(user=user, current_password=body.current_password, new_password=body.new_password, db=db)
     return MessageResponse(message="비밀번호가 변경되었습니다.")
+
+
+# ── 비밀번호 재설정 (비로그인 상태에서 이메일 링크로) ─────────────────────────
+
+@router.post("/password-reset/request", response_model=MessageResponse, summary="비밀번호 재설정 요청 (메일 발송)")
+async def api_request_password_reset(body: PasswordResetRequest, db: Session = Depends(get_db)):
+    # 보안상 사용자 존재 여부와 무관하게 동일 메시지 반환
+    await request_password_reset(email=body.email, db=db)
+    return MessageResponse(message="입력하신 이메일로 재설정 안내가 발송되었습니다. 메일이 오지 않으면 스팸함을 확인해주세요.")
+
+
+@router.get("/password-reset/verify", response_model=PasswordResetVerifyResponse, summary="재설정 토큰 유효성 검증")
+def api_verify_reset_token(token: str, db: Session = Depends(get_db)):
+    user = verify_reset_token(raw_token=token, db=db)
+    return PasswordResetVerifyResponse(valid=True, email=user.email)
+
+
+@router.post("/password-reset/confirm", response_model=MessageResponse, summary="비밀번호 재설정 확정")
+def api_confirm_password_reset(body: PasswordResetConfirmRequest, db: Session = Depends(get_db)):
+    confirm_password_reset(raw_token=body.token, new_password=body.new_password, db=db)
+    return MessageResponse(message="비밀번호가 재설정되었습니다. 새 비밀번호로 로그인해주세요.")
 
 
 # ── Google ────────────────────────────────────────────────────────────────────
