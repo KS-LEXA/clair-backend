@@ -7,6 +7,7 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.contracts import router as contracts_router
 from app.api.v1.chat import router as chat_router
 from app.api.v1.notifications import router as notifications_router
+from app.api.v1.shares import router as shares_router
 
 
 @asynccontextmanager
@@ -31,6 +32,7 @@ app.include_router(auth_router, prefix="/api/v1/auth", tags=["인증"])
 app.include_router(contracts_router, prefix="/api/v1/contracts", tags=["계약서"])
 app.include_router(chat_router, prefix="/api/v1/chat", tags=["채팅"])
 app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["알림"])
+app.include_router(shares_router, prefix="/api/v1/shares", tags=["공유 (외부 접근)"])
 
 
 @app.get("/health", tags=["시스템"])

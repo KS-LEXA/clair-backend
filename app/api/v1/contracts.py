@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Query, BackgroundTasks
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from urllib.parse import quote
 from app.db.session import get_db
 from app.core.security import get_current_user
 from app.models.user import User
@@ -8,10 +10,18 @@ from app.schemas.contract import (
     AnalysisResultResponse, RiskClauseResponse, MessageResponse,
     AnalyzeAcceptedResponse, ContractStatusResponse, ClauseResponse, ClauseListResponse,
 )
+from app.schemas.share import (
+    ShareCreateRequest, ShareCreateResponse,
+    ShareListItem, ShareListResponse,
+)
 from app.services.contract_service import (
     upload_contract, get_contract_by_id, get_contracts_by_user, delete_contract,
     trigger_analysis, analyze_contract_background, get_clauses,
 )
+from app.services.share_service import (
+    create_share, list_shares, revoke_share, share_to_response_dict,
+)
+from app.services.pdf_service import generate_contract_pdf
 
 router = APIRouter()
 
@@ -96,4 +106,53 @@ def api_get_clauses(contract_id: int, user: User = Depends(get_current_user), db
         total=len(clauses),
         clauses=[ClauseResponse(id=c.id, clause_id=c.clause_id, title=c.title, text=c.text,
                                 page_refs=c.page_refs, order=c.order) for c in clauses],
+    )
+
+
+# ── 공유 (소유자 전용) ─────────────────────────────────────────────────────
+
+@router.post("/{contract_id}/share", response_model=ShareCreateResponse, status_code=201, summary="공유 링크 생성")
+def api_create_share(
+    contract_id: int,
+    body: ShareCreateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    share = create_share(
+        contract_id=contract_id, user_id=user.id,
+        password=body.password, expire_days=body.expire_days, db=db,
+    )
+    return ShareCreateResponse(**share_to_response_dict(share))
+
+
+@router.get("/{contract_id}/shares", response_model=ShareListResponse, summary="공유 링크 목록")
+def api_list_shares(contract_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    shares = list_shares(contract_id=contract_id, user_id=user.id, db=db)
+    return ShareListResponse(
+        contract_id=contract_id,
+        total=len(shares),
+        shares=[ShareListItem(**share_to_response_dict(s)) for s in shares],
+    )
+
+
+@router.delete("/{contract_id}/shares/{share_id}", response_model=MessageResponse, summary="공유 링크 해제")
+def api_revoke_share(
+    contract_id: int, share_id: int,
+    user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    revoke_share(share_id=share_id, contract_id=contract_id, user_id=user.id, db=db)
+    return MessageResponse(message="공유 링크가 해제되었습니다.")
+
+
+# ── PDF 다운로드 (소유자 전용) ─────────────────────────────────────────────
+
+@router.get("/{contract_id}/download/pdf", summary="분석 결과 PDF 다운로드")
+def api_download_pdf(contract_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    pdf_bytes, filename = generate_contract_pdf(contract_id=contract_id, user_id=user.id, db=db)
+    # 한글 파일명은 RFC 5987 형식(`filename*`)으로 인코딩 — Content-Disposition에서 안전
+    content_disposition = f"attachment; filename*=UTF-8''{quote(filename)}"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": content_disposition},
     )
