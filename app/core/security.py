@@ -32,6 +32,24 @@ def create_refresh_token(user_id: int) -> str:
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
 
+def create_share_access_token(share_token: str) -> tuple[str, datetime]:
+    """공유 링크 비밀번호 검증 통과 시 발급 — 짧은 만료(기본 60분)."""
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.share_access_token_expire_minutes)
+    payload = {"share_token": share_token, "type": "share", "exp": expire}
+    return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm), expire
+
+
+def decode_share_access_token(jwt_str: str) -> str:
+    """공유 access token에서 share_token(원본 토큰) 추출. 검증 실패 시 401."""
+    payload = decode_token(jwt_str)
+    if payload.get("type") != "share":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="공유 access token이 아닙니다.")
+    share_token = payload.get("share_token")
+    if not share_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않은 토큰입니다.")
+    return share_token
+
+
 def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])

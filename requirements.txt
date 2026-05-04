@@ -12,3 +12,5 @@ passlib[bcrypt]
 pydantic[email]
 aiofiles
 httpx
+weasyprint
+jinja2
