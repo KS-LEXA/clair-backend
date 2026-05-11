@@ -15,3 +15,4 @@ httpx
 fastapi-mail==1.4.1
 weasyprint
 jinja2
+Pillow
