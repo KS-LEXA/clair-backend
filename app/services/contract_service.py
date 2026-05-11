@@ -3,7 +3,9 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
+from PIL import Image, ImageOps
 from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.config import settings
@@ -69,6 +71,117 @@ async def upload_contract(file: UploadFile, user_id: int, db: Session) -> Contra
     contract = Contract(user_id=user_id, original_filename=file.filename, stored_filename=stored_filename,
                         file_path=str(file_path), file_size=file_size, file_type=file_ext,
                         mime_type=_get_mime_type(file.filename), status=ContractStatus.UPLOADED)
+    db.add(contract)
+    db.commit()
+    db.refresh(contract)
+    return contract
+
+
+# ── 다중 이미지 업로드 (폰 스캐너 방식) ────────────────────────────────────────
+
+_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
+_MAX_IMAGES_PER_CONTRACT = 20
+
+
+async def _merge_images_to_pdf(files: list[UploadFile]) -> tuple[bytes, int]:
+    """업로드된 이미지들을 순서대로 한 PDF로 합쳐 (pdf_bytes, raw_total_size) 반환.
+
+    raw_total_size: 변환 전 원본 이미지 총 바이트(한도 검사에 사용).
+    EXIF orientation은 ImageOps.exif_transpose로 자동 보정 — 폰 사진 회전 깨짐 방지.
+    """
+    images: list[Image.Image] = []
+    raw_total_size = 0
+    for f in files:
+        content = await f.read()
+        if not content:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"빈 파일이 포함되어 있습니다: {f.filename}",
+            )
+        raw_total_size += len(content)
+        try:
+            img = Image.open(BytesIO(content))
+            img = ImageOps.exif_transpose(img).convert("RGB")
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"이미지를 읽을 수 없습니다 ({f.filename}): {e}",
+            )
+        images.append(img)
+
+    buf = BytesIO()
+    images[0].save(buf, format="PDF", save_all=True, append_images=images[1:])
+    return buf.getvalue(), raw_total_size
+
+
+async def upload_contract_from_images(
+    files: list[UploadFile], user_id: int, db: Session
+) -> Contract:
+    """이미지 여러 장을 받아 한 PDF로 병합 후 단일 Contract로 저장.
+
+    - 폰으로 페이지별로 찍은 사진들을 한 계약서로 묶어 업로드하는 용도
+    - AI 분석 파이프라인은 PDF 다중 페이지를 이미 지원하므로 별도 수정 불필요
+    """
+    if not files:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="이미지를 1장 이상 업로드해주세요.")
+    if len(files) > _MAX_IMAGES_PER_CONTRACT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"한 번에 최대 {_MAX_IMAGES_PER_CONTRACT}장까지 업로드할 수 있습니다.",
+        )
+    for f in files:
+        if not f.filename:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="파일명이 없는 항목이 있습니다.")
+        ext = Path(f.filename).suffix.lower()
+        if ext not in _IMAGE_EXTENSIONS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"지원하지 않는 이미지 형식입니다 ({f.filename}): PNG/JPG/JPEG만 가능",
+            )
+
+    pdf_bytes, raw_total_size = await _merge_images_to_pdf(files)
+
+    # 한도 검사 — 원본 합계와 병합 PDF 둘 다 max_file_size 이하여야 함
+    if raw_total_size > settings.max_file_size_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"전체 이미지 크기 합이 {settings.max_file_size_mb}MB를 초과합니다.",
+        )
+    if len(pdf_bytes) > settings.max_file_size_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"병합된 PDF 크기가 {settings.max_file_size_mb}MB를 초과합니다.",
+        )
+
+    # 저장 경로 규칙은 단일 업로드와 동일 (YYYY/MM/DD/{uuid}.pdf)
+    upload_dir = Path(settings.upload_dir)
+    today = datetime.now()
+    date_dir = upload_dir / today.strftime("%Y") / today.strftime("%m") / today.strftime("%d")
+    date_dir.mkdir(parents=True, exist_ok=True)
+    stored_filename = f"{uuid.uuid4().hex}.pdf"
+    file_path = date_dir / stored_filename
+
+    try:
+        file_path.write_bytes(pdf_bytes)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"파일 저장 중 오류: {e}",
+        )
+
+    first_name = files[0].filename
+    display_name = f"{first_name} 외 {len(files) - 1}장" if len(files) > 1 else first_name
+
+    contract = Contract(
+        user_id=user_id,
+        original_filename=display_name,
+        stored_filename=stored_filename,
+        file_path=str(file_path),
+        file_size=len(pdf_bytes),
+        file_type=".pdf",                # AI 파이프라인은 PDF로 인식하여 페이지별 OCR 수행
+        mime_type="application/pdf",
+        status=ContractStatus.UPLOADED,
+    )
     db.add(contract)
     db.commit()
     db.refresh(contract)

@@ -15,7 +15,8 @@ from app.schemas.share import (
     ShareListItem, ShareListResponse,
 )
 from app.services.contract_service import (
-    upload_contract, get_contract_by_id, get_contracts_by_user, delete_contract,
+    upload_contract, upload_contract_from_images,
+    get_contract_by_id, get_contracts_by_user, delete_contract,
     trigger_analysis, analyze_contract_background, get_clauses,
 )
 from app.services.share_service import (
@@ -31,6 +32,28 @@ async def api_upload_contract(file: UploadFile = File(...), user: User = Depends
     contract = await upload_contract(file=file, user_id=user.id, db=db)
     return ContractUploadResponse(id=contract.id, original_filename=contract.original_filename, file_size=contract.file_size,
                                   file_type=contract.file_type, status=contract.status.value, created_at=contract.created_at)
+
+
+@router.post(
+    "/upload-images",
+    response_model=ContractUploadResponse,
+    status_code=201,
+    summary="이미지 여러 장을 한 계약서로 업로드 (폰 스캐너 방식)",
+)
+async def api_upload_contract_images(
+    files: list[UploadFile] = File(..., description="순서대로 업로드된 페이지 이미지들 (PNG/JPG/JPEG, 최대 20장)"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    contract = await upload_contract_from_images(files=files, user_id=user.id, db=db)
+    return ContractUploadResponse(
+        id=contract.id,
+        original_filename=contract.original_filename,
+        file_size=contract.file_size,
+        file_type=contract.file_type,
+        status=contract.status.value,
+        created_at=contract.created_at,
+    )
 
 
 @router.get("/", response_model=ContractListResponse, summary="계약서 목록 조회")
