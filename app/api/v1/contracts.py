@@ -92,7 +92,7 @@ def api_delete_contract(contract_id: int, user: User = Depends(get_current_user)
     return MessageResponse(message="계약서가 삭제되었습니다.")
 
 
-@router.post("/{contract_id}/analyze", response_model=AnalyzeAcceptedResponse, status_code=202, summary="계약서 분석 요청")
+@router.post("/{contract_id}/request-analysis", response_model=AnalyzeAcceptedResponse, status_code=202, summary="계약서 분석 요청")
 async def api_request_analysis(
     contract_id: int,
     background_tasks: BackgroundTasks,
