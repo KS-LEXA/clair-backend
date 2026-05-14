@@ -12,15 +12,23 @@ class ChatSessionResponse(BaseModel):
     id: int
     contract_id: Optional[int] = None
     title: str
+    total_message_count: int = 0
+    last_message_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
-    last_message: Optional[str] = None
     model_config = {"from_attributes": True}
+
+
+class ChatSessionListItem(ChatSessionResponse):
+    # 목록 화면에서만 채워지는 메타데이터 — 미리보기 카드용
+    first_question: Optional[str] = None    # 사용자가 처음 보낸 질문
+    last_question: Optional[str] = None     # 사용자가 마지막으로 보낸 질문
+    last_answer: Optional[str] = None       # AI 마지막 응답
 
 
 class ChatSessionListResponse(BaseModel):
     total: int
-    sessions: List[ChatSessionResponse]
+    sessions: List[ChatSessionListItem]
 
 
 class SendMessageRequest(BaseModel):
