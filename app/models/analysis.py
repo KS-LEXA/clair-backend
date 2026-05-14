@@ -82,11 +82,19 @@ class RiskClause(Base):
     clause_number = Column(String(50), nullable=True)
     # AI가 위험하다고 판단한 조항 원문
     original_text = Column(Text, nullable=False)
-    # 위험 유형 — auto_renewal | termination | liability | payment | other
+    # 사용자 친화적 위험 조항명 (한국어, Gemini 산출)
+    title = Column(String(200), nullable=True)
+    # 위험 유형 — payment | liability | termination | confidentiality | renewal | penalty | ip | etc
     risk_type = Column(String(100), nullable=False)
     risk_level = Column(Enum(RiskLevel), default=RiskLevel.MEDIUM, nullable=False)
+    # 심각도 수치 1~10 (Gemini 산출)
+    severity_score = Column(Integer, default=5, nullable=True)
+    # 분석 신뢰도 0.0~1.0 (Gemini 산출)
+    confidence = Column(Float, nullable=True)
     # AI가 생성한 위험 설명 (한국어)
     explanation = Column(Text, nullable=True)
+    # 위험 판단 근거 원문
+    problematic_text = Column(Text, nullable=True)
     # 근거가 된 조항 ID 목록 ex) ["clause-003", "clause-007"]
     # ContractClause.clause_id와 매핑 — 프론트에서 해당 조항 하이라이트에 사용
     evidence_clause_ids = Column(JSON, nullable=True)
