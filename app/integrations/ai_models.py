@@ -41,11 +41,15 @@ class AIExtractionResult(BaseModel):
 
 # 위험 조항 탐지 결과 1건
 class AIRiskResult(BaseModel):
-    risk_type: str                      # auto_renewal | termination | liability | payment | other
-    severity: str                       # low | medium | high
-    reason: str                         # 위험한 이유 설명
-    evidence_clause_ids: list[str] = [] # 근거 조항 ID 목록 — ContractClause.clause_id 참조
-    evidence_text: str = ""             # 해당 조항에서 발췌한 원문
+    risk_type: str                          # auto_renewal | termination | liability | payment | other
+    severity: str                           # low | medium | high
+    reason: str = ""                        # 위험한 이유 설명
+    evidence_clause_ids: list[str] = []     # 근거 조항 ID 목록
+    evidence_text: str = ""                 # 해당 조항에서 발췌한 원문
+    title: Optional[str] = None             # 한국어 위험 조항명 (예: "손해배상 무제한")
+    severity_score: int = 5                 # 심각도 수치 1~10
+    confidence: float = 0.7                 # 분석 신뢰도 0.0~1.0
+    problematic_text: str = ""              # 위험 판단 근거 원문
 
 
 # YOLOv8 비전 탐지 결과 1건 (인감·서명·체크 표식)
