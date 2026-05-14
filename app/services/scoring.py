@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-# 카테고리별 중요도 가중치
+# 카테고리별 중요도 가중치 — clair-ai 프롬프트가 허용하는 category 값과 동기화
+# 등록되지 않은 카테고리는 기본 1.0이 적용됨 (compute_safety_score의 .get fallback)
 CATEGORY_WEIGHTS: dict[str, float] = {
     "payment":         1.2,
     "liability":       1.8,
@@ -12,6 +13,11 @@ CATEGORY_WEIGHTS: dict[str, float] = {
     "ip":              1.6,
     "non_compete":     1.4,
     "unilateral":      1.3,
+    # clair-ai #22로 새로 도입된 카테고리
+    "dispute":         1.2,    # 분쟁 해결 (관할·중재)
+    "warranty":        1.1,    # 하자 보증
+    "privacy":         1.4,    # 개인정보 처리 — 법적 의무 강함
+    # "etc"은 의도적으로 등록하지 않음 — 기본 1.0 적용
 }
 
 # 위험 레벨 기본 점수

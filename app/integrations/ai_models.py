@@ -41,11 +41,16 @@ class AIExtractionResult(BaseModel):
 
 # 위험 조항 탐지 결과 1건
 class AIRiskResult(BaseModel):
-    risk_type: str                      # auto_renewal | termination | liability | payment | other
-    severity: str                       # low | medium | high
-    reason: str                         # 위험한 이유 설명
+    risk_type: str                      # AI 응답의 category — payment | liability | termination | confidentiality | renewal | penalty | ip | dispute | warranty | privacy | etc
+    severity: str                       # low | medium | high (AI 응답의 risk_level)
+    reason: str                         # 위험한 이유 설명 (사용자 친화적)
     evidence_clause_ids: list[str] = [] # 근거 조항 ID 목록 — ContractClause.clause_id 참조
     evidence_text: str = ""             # 해당 조항에서 발췌한 원문
+    # ── 위험 조항 고도화로 추가된 필드 (clair-ai #22) ──
+    severity_score: int = 5             # 1~10 차등 심각도 — scoring.py 가중치 계산에 사용
+    confidence: float = 0.7             # 0.0~1.0 AI 신뢰도
+    title: str = ""                     # 사용자 친화적 위험 조항명 ex) "손해배상 무제한"
+    problematic_text: str = ""          # 위험 판단 근거가 된 원문
 
 
 # YOLOv8 비전 탐지 결과 1건 (인감·서명·체크 표식)
