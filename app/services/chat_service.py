@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -5,6 +6,11 @@ from app.models.chat import ChatSession, ChatMessage, MessageSender, MessageType
 from app.models.contract import Contract, ContractStatus
 from app.models.analysis import ContractClause
 from app.integrations.ai_client import ai_client
+
+
+def _bump_session_counters(session: ChatSession, delta: int, at: datetime) -> None:
+    session.total_message_count = (session.total_message_count or 0) + delta
+    session.last_message_at = at
 
 
 def create_session(user_id: int, db: Session, contract_id: int = None, title: str = "새 대화") -> ChatSession:
@@ -20,6 +26,7 @@ def create_session(user_id: int, db: Session, contract_id: int = None, title: st
     db.refresh(session)
     welcome = ChatMessage(session_id=session.id, sender=MessageSender.SYSTEM, message_type=MessageType.TEXT, content="계약서를 업로드하거나 질문을 입력해주세요.")
     db.add(welcome)
+    _bump_session_counters(session, delta=1, at=datetime.now(timezone.utc))
     db.commit()
     return session
 
@@ -57,6 +64,7 @@ async def send_message(session_id: int, user_id: int, content: str, message_type
         content=content,
     )
     db.add(user_msg)
+    _bump_session_counters(session, delta=1, at=datetime.now(timezone.utc))
     db.commit()
     db.refresh(user_msg)
 
@@ -83,7 +91,7 @@ async def send_message(session_id: int, user_id: int, content: str, message_type
         extra_data=ai_extra,    # evidence_clause_ids, evidence_clauses 포함
     )
     db.add(ai_msg)
-    session.updated_at = func.now()
+    _bump_session_counters(session, delta=1, at=datetime.now(timezone.utc))
     db.commit()
     db.refresh(ai_msg)
     return user_msg, ai_msg
