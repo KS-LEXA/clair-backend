@@ -11,12 +11,22 @@ from app.models.contract import ContractType
 from app.models.analysis import AnalysisResult, RiskClause, ContractClause, RiskLevel, ComplianceResult
 
 # clair-ai가 반환하는 contract_type 문자열 → ContractType Enum 변환 테이블
-# AI 출력값이 추가될 경우 여기에만 추가하면 됨
+# AI 출력값이 추가될 경우 여기에만 추가하면 됨.
+# 프롬프트가 영문/한글을 섞어 반환하는 경우가 있어 양쪽 모두 등록한다.
 _AI_TYPE_MAP: dict[str, ContractType] = {
+    # 영문 (AI가 enum-style로 반환하는 케이스)
     "nda": ContractType.NDA,
     "service": ContractType.SERVICE,
     "employment": ContractType.EMPLOYMENT,
     "unknown": ContractType.UNKNOWN,
+    # 한글 (AI가 한국어 라벨로 반환하는 케이스 — 근로계약서 분석 시 관찰됨)
+    "근로계약": ContractType.EMPLOYMENT,
+    "근로계약서": ContractType.EMPLOYMENT,
+    "비밀유지계약": ContractType.NDA,
+    "비밀유지계약서": ContractType.NDA,
+    "비밀유지서약서": ContractType.NDA,
+    "용역계약": ContractType.SERVICE,
+    "용역계약서": ContractType.SERVICE,
 }
 
 # AI severity 문자열 → RiskLevel Enum 변환 테이블
