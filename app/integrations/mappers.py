@@ -61,13 +61,17 @@ def ai_risks_to_risk_clauses(risks: list[AIRiskResult], contract_id: int) -> lis
         rows.append(
             RiskClause(
                 contract_id=contract_id,
+                title=getattr(r, "title", None),
                 clause_number=r.evidence_clause_ids[0] if r.evidence_clause_ids else None,
-                original_text=r.evidence_text,
+                original_text=r.evidence_text or getattr(r, "problematic_text", ""),
                 risk_type=r.risk_type,
                 risk_level=_AI_SEVERITY_MAP.get(r.severity, RiskLevel.MEDIUM),
+                severity_score=getattr(r, "severity_score", 5),
+                confidence=getattr(r, "confidence", 0.7),
                 explanation=r.reason,
                 evidence_clause_ids=r.evidence_clause_ids,
                 evidence_text=r.evidence_text,
+                problematic_text=getattr(r, "problematic_text", None),
             )
         )
     return rows

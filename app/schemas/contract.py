@@ -26,6 +26,8 @@ class ContractDetailResponse(BaseModel):
     updated_at: datetime
     analysis: Optional["AnalysisResultResponse"] = None
     risk_clauses: Optional[List["RiskClauseResponse"]] = None
+    safety_score: Optional[int] = None
+    safety_score_detail: Optional[Any] = None
     model_config = {"from_attributes": True}
 
 
@@ -55,11 +57,15 @@ class AnalysisResultResponse(BaseModel):
 
 class RiskClauseResponse(BaseModel):
     id: int
+    title: Optional[str] = None
     clause_number: Optional[str] = None
     original_text: str
     risk_type: str
     risk_level: str
+    severity_score: Optional[int] = None
+    confidence: Optional[float] = None
     explanation: Optional[str] = None
+    problematic_text: Optional[str] = None
     evidence_clause_ids: Optional[List[str]] = None
     evidence_text: Optional[str] = None
     model_config = {"from_attributes": True}
