@@ -123,7 +123,6 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetConfirmRequest(BaseModel):
     token: str
     new_password: str
-    new_password_confirm: str
 
     @field_validator("new_password")
     @classmethod
@@ -131,12 +130,6 @@ class PasswordResetConfirmRequest(BaseModel):
         if len(v) < 8:
             raise ValueError("새 비밀번호는 8자 이상이어야 합니다.")
         return v
-
-    @model_validator(mode="after")
-    def passwords_match(self):
-        if self.new_password != self.new_password_confirm:
-            raise ValueError("비밀번호가 일치하지 않습니다.")
-        return self
 
 
 class PasswordResetVerifyResponse(BaseModel):
