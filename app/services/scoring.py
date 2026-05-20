@@ -79,7 +79,7 @@ def compute_safety_score(risk_clauses: list) -> dict:
             "reason": "고위험 조항이 3개 이상 존재",
         })
 
-    final_score = max(0, BASE_SCORE - total_deduction)
+    final_score = max(25, BASE_SCORE - total_deduction)
 
     return {
         "score": final_score,
