@@ -23,6 +23,7 @@ from app.services.share_service import (
     create_share, list_shares, revoke_share, share_to_response_dict,
 )
 from app.services.pdf_service import generate_contract_pdf
+from app.services.scoring import compute_safety_score
 
 router = APIRouter()
 
@@ -76,14 +77,20 @@ def api_get_contract(contract_id: int, user: User = Depends(get_current_user), d
                                           created_at=contract.analysis_result.created_at)
     risk_clauses = None
     if contract.risk_clauses:
-        risk_clauses = [RiskClauseResponse(id=rc.id, clause_number=rc.clause_number, original_text=rc.original_text,
-                                           risk_type=rc.risk_type, risk_level=rc.risk_level.value, explanation=rc.explanation,
+        risk_clauses = [RiskClauseResponse(id=rc.id, title=rc.title, clause_number=rc.clause_number,
+                                           original_text=rc.original_text, risk_type=rc.risk_type,
+                                           risk_level=rc.risk_level.value, severity_score=rc.severity_score,
+                                           confidence=rc.confidence, explanation=rc.explanation,
+                                           problematic_text=rc.problematic_text,
                                            evidence_clause_ids=rc.evidence_clause_ids, evidence_text=rc.evidence_text)
                         for rc in contract.risk_clauses]
+    score_detail = compute_safety_score(contract.risk_clauses or [])
     return ContractDetailResponse(id=contract.id, original_filename=contract.original_filename, file_size=contract.file_size,
                                   file_type=contract.file_type, status=contract.status.value, contract_type=contract.contract_type.value,
                                   extracted_text=contract.extracted_text, created_at=contract.created_at, updated_at=contract.updated_at,
-                                  analysis=analysis, risk_clauses=risk_clauses)
+                                  analysis=analysis, risk_clauses=risk_clauses,
+                                  safety_score=score_detail["score"],
+                                  safety_score_detail=score_detail)
 
 
 @router.delete("/{contract_id}", response_model=MessageResponse, summary="계약서 삭제")
