@@ -10,6 +10,7 @@ from app.core.security import hash_password, verify_password, create_access_toke
 from app.models.user import User
 from app.models.social_account import SocialAccount
 from app.models.password_reset import PasswordResetToken
+from app.models.email_verification import EmailVerification
 from app.integrations.email_client import send_email
 
 
@@ -17,8 +18,24 @@ def signup(email: str, nickname: str, password: str, db: Session, marketing_agre
     existing = db.query(User).filter(User.email == email).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 가입된 이메일입니다.")
-    user = User(email=email, nickname=nickname.strip(), password_hash=hash_password(password), marketing_agreed=marketing_agreed)
+
+    # 가입 전 이메일 인증 통과 여부 확인 — verified 레코드는 가입 시점에 1회용으로 소비.
+    verification = db.query(EmailVerification).filter(EmailVerification.email == email).first()
+    if not verification or verification.verified_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이메일 인증이 필요합니다. 인증 코드를 먼저 확인해주세요.",
+        )
+
+    user = User(
+        email=email,
+        nickname=nickname.strip(),
+        password_hash=hash_password(password),
+        marketing_agreed=marketing_agreed,
+        email_verified_at=datetime.now(timezone.utc),
+    )
     db.add(user)
+    db.delete(verification)  # 인증 레코드는 가입 시 소비
     db.commit()
     db.refresh(user)
     return user
@@ -140,10 +157,97 @@ def confirm_password_reset(raw_token: str, new_password: str, db: Session) -> No
     db.commit()
 
 
+# ── 회원가입 이메일 인증 (가입 전 6자리 코드 확인) ─────────────────────────────
+
+def _hash_code(code: str) -> str:
+    return hashlib.sha256(code.encode()).hexdigest()
+
+
+def _generate_code() -> str:
+    """6자리 숫자 코드 — secrets로 균등 분포."""
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+async def request_email_verification(email: str, db: Session) -> None:
+    """
+    이메일로 6자리 인증 코드 발송.
+    이메일당 활성 레코드 1개 — 재요청 시 기존 레코드의 코드/만료/시도횟수를 새로 채움.
+    이미 가입된 이메일이면 정보 노출 회피 위해 그대로 진행 (가입은 signup 단계에서 막힘).
+    """
+    code = _generate_code()
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.email_verification_code_expire_minutes)
+
+    record = db.query(EmailVerification).filter(EmailVerification.email == email).first()
+    if record:
+        record.code_hash = _hash_code(code)
+        record.expires_at = expires_at
+        record.attempt_count = 0
+        record.verified_at = None
+    else:
+        record = EmailVerification(email=email, code_hash=_hash_code(code), expires_at=expires_at)
+        db.add(record)
+    db.commit()
+
+    await send_email(
+        to=email,
+        subject="[CLAIR] 이메일 인증 코드",
+        template="email_verification.html",
+        context={
+            "code": code,
+            "expire_minutes": settings.email_verification_code_expire_minutes,
+        },
+    )
+
+
+def confirm_email_verification(email: str, code: str, db: Session) -> None:
+    """
+    코드 검증 → 성공 시 verified_at 채움. 실패 누적 5회 시 코드 무효.
+    한 트랜잭션 내에서 attempt_count도 함께 증가시켜야 무차별 대입을 막을 수 있음.
+    """
+    record = db.query(EmailVerification).filter(EmailVerification.email == email).first()
+    if not record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="인증 요청 내역이 없습니다. 코드를 다시 요청해주세요.",
+        )
+
+    expires_at = record.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="만료된 코드입니다. 인증 코드를 다시 요청해주세요.",
+        )
+
+    if record.attempt_count >= settings.email_verification_max_attempts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="시도 횟수를 초과했습니다. 인증 코드를 다시 요청해주세요.",
+        )
+
+    if record.code_hash != _hash_code(code):
+        record.attempt_count += 1
+        db.commit()
+        remaining = settings.email_verification_max_attempts - record.attempt_count
+        if remaining <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="시도 횟수를 초과했습니다. 인증 코드를 다시 요청해주세요.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"인증 코드가 올바르지 않습니다. (남은 시도 {remaining}회)",
+        )
+
+    record.verified_at = datetime.now(timezone.utc)
+    db.commit()
+
+
 # ── 공통 소셜 로그인 처리 ──────────────────────────────────────────────────────
 
 def _social_login(provider: str, provider_id: str, email: str, nickname: str, db: Session) -> dict:
-    """소셜 계정으로 유저 찾기 → 없으면 생성, JWT 발급"""
+    """소셜 계정으로 유저 찾기 → 없으면 생성, JWT 발급. 소셜 유저는 IdP 신뢰로 자동 verified."""
     social = (
         db.query(SocialAccount)
         .filter(SocialAccount.provider == provider, SocialAccount.provider_id == provider_id)
@@ -151,16 +255,22 @@ def _social_login(provider: str, provider_id: str, email: str, nickname: str, db
     )
 
     is_new_user = False
+    now = datetime.now(timezone.utc)
 
     if social:
         user = social.user
+        # 기존 이메일 가입자가 같은 이메일로 소셜 연결한 케이스: 아직 미인증이면 이번에 채움.
+        if user.email_verified_at is None:
+            user.email_verified_at = now
     else:
         user = db.query(User).filter(User.email == email).first()
-        if not user:
-            user = User(email=email, nickname=nickname[:20], password_hash=None)
+        if user is None:
+            user = User(email=email, nickname=nickname[:20], password_hash=None, email_verified_at=now)
             db.add(user)
             db.flush()  # user.id 확보
             is_new_user = True
+        elif user.email_verified_at is None:
+            user.email_verified_at = now
 
         social = SocialAccount(user_id=user.id, provider=provider, provider_id=str(provider_id))
         db.add(social)

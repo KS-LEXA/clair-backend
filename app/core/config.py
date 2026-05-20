@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     password_reset_path: str = "/password-reset"
     password_reset_token_expire_minutes: int = 30
 
+    email_verification_code_expire_minutes: int = 10
+    email_verification_max_attempts: int = 5
+
     share_path: str = "/share"
     share_token_default_expire_days: int = 7
     share_access_token_expire_minutes: int = 60
