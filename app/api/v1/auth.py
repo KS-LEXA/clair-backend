@@ -12,12 +12,14 @@ from app.schemas.auth import (
     MyInfoResponse, UpdateNicknameRequest, ChangePasswordRequest,
     SocialLoginResponse,
     PasswordResetRequest, PasswordResetConfirmRequest, PasswordResetVerifyResponse,
+    EmailVerificationRequest, EmailVerificationConfirmRequest,
 )
 from app.schemas.contract import MessageResponse
 from app.services.auth_service import (
     signup, login, refresh_access_token, update_nickname, change_password,
     update_profile_image, profile_image_url,
     request_password_reset, verify_reset_token, confirm_password_reset,
+    request_email_verification, confirm_email_verification,
     get_google_auth_url, google_login,
     get_naver_auth_url, naver_login,
     get_kakao_auth_url, kakao_login,
@@ -104,6 +106,20 @@ def api_verify_reset_token(token: str, db: Session = Depends(get_db)):
 def api_confirm_password_reset(body: PasswordResetConfirmRequest, db: Session = Depends(get_db)):
     confirm_password_reset(raw_token=body.token, new_password=body.new_password, db=db)
     return MessageResponse(message="비밀번호가 재설정되었습니다. 새 비밀번호로 로그인해주세요.")
+
+
+# ── 회원가입 이메일 인증 (가입 전 6자리 코드 확인) ─────────────────────────────
+
+@router.post("/email-verification/request", response_model=MessageResponse, summary="이메일 인증 코드 발송")
+async def api_request_email_verification(body: EmailVerificationRequest, db: Session = Depends(get_db)):
+    await request_email_verification(email=body.email, db=db)
+    return MessageResponse(message="입력하신 이메일로 인증 코드를 발송했습니다. 메일이 오지 않으면 스팸함을 확인해주세요.")
+
+
+@router.post("/email-verification/confirm", response_model=MessageResponse, summary="이메일 인증 코드 확인")
+def api_confirm_email_verification(body: EmailVerificationConfirmRequest, db: Session = Depends(get_db)):
+    confirm_email_verification(email=body.email, code=body.code, db=db)
+    return MessageResponse(message="이메일 인증이 완료되었습니다. 회원가입을 진행해주세요.")
 
 
 # ── Google ────────────────────────────────────────────────────────────────────

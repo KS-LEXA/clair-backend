@@ -136,3 +136,22 @@ class PasswordResetConfirmRequest(BaseModel):
 class PasswordResetVerifyResponse(BaseModel):
     valid: bool
     email: Optional[str] = None
+
+
+# ── 회원가입 이메일 인증 (가입 전 코드 확인) ─────────────────────────────────
+
+class EmailVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+class EmailVerificationConfirmRequest(BaseModel):
+    email: EmailStr
+    code: str
+
+    @field_validator("code")
+    @classmethod
+    def code_format(cls, v):
+        v = v.strip()
+        if not (v.isdigit() and len(v) == 6):
+            raise ValueError("인증 코드는 6자리 숫자여야 합니다.")
+        return v
