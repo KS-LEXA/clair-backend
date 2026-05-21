@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     max_file_size_mb: int = 20
     allowed_extensions: str = ".pdf,.png,.jpg,.jpeg,.txt,.docx"
 
+    backend_base_url: str = "http://localhost:8000"
+    profile_image_max_size_mb: int = 5
+    profile_image_allowed_extensions: str = ".png,.jpg,.jpeg"
+
     secret_key: str = "change-this-to-random-secret-key"
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 7
@@ -71,6 +75,14 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]
+
+    @property
+    def profile_image_allowed_extensions_list(self) -> List[str]:
+        return [ext.strip() for ext in self.profile_image_allowed_extensions.split(",")]
+
+    @property
+    def profile_image_max_size_bytes(self) -> int:
+        return self.profile_image_max_size_mb * 1024 * 1024
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

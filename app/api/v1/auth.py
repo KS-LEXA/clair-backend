@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -17,6 +17,7 @@ from app.schemas.auth import (
 from app.schemas.contract import MessageResponse
 from app.services.auth_service import (
     signup, login, refresh_access_token, update_nickname, change_password,
+    update_profile_image, profile_image_url,
     request_password_reset, verify_reset_token, confirm_password_reset,
     request_email_verification, confirm_email_verification,
     get_google_auth_url, google_login,
@@ -25,6 +26,19 @@ from app.services.auth_service import (
 )
 
 router = APIRouter()
+
+
+def _to_my_info(user: User) -> MyInfoResponse:
+    return MyInfoResponse(
+        id=user.id,
+        email=user.email,
+        nickname=user.nickname,
+        has_password=user.password_hash is not None,
+        profile_image=profile_image_url(user),
+        marketing_agreed=user.marketing_agreed,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+    )
 
 
 @router.post("/signup", response_model=SignUpResponse, status_code=201, summary="회원가입")
@@ -50,35 +64,27 @@ def api_refresh(body: RefreshRequest, db: Session = Depends(get_db)):
 
 @router.get("/me", response_model=MyInfoResponse, summary="내 정보 조회")
 def api_my_info(user: User = Depends(get_current_user)):
-    return MyInfoResponse(
-        id=user.id,
-        email=user.email,
-        nickname=user.nickname,
-        has_password=user.password_hash is not None,
-        marketing_agreed=user.marketing_agreed,
-        created_at=user.created_at,
-        updated_at=user.updated_at,
-    )
+    return _to_my_info(user)
 
 
 @router.patch("/me/nickname", response_model=MyInfoResponse, summary="닉네임 변경")
 def api_update_nickname(body: UpdateNicknameRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    updated = update_nickname(user, body.nickname, db)
-    return MyInfoResponse(
-        id=updated.id,
-        email=updated.email,
-        nickname=updated.nickname,
-        has_password=updated.password_hash is not None,
-        marketing_agreed=updated.marketing_agreed,
-        created_at=updated.created_at,
-        updated_at=updated.updated_at,
-    )
+    return _to_my_info(update_nickname(user, body.nickname, db))
 
 
 @router.patch("/me/password", response_model=MessageResponse, summary="비밀번호 변경")
 def api_change_password(body: ChangePasswordRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     change_password(user=user, current_password=body.current_password, new_password=body.new_password, db=db)
     return MessageResponse(message="비밀번호가 변경되었습니다.")
+
+
+@router.post("/me/profile-image", response_model=MyInfoResponse, summary="프로필 이미지 업로드")
+async def api_upload_profile_image(
+    file: UploadFile = File(..., description="프로필 이미지 (PNG/JPG/JPEG, 최대 5MB)"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return _to_my_info(await update_profile_image(user=user, file=file, db=db))
 
 
 # ── 비밀번호 재설정 (비로그인 상태에서 이메일 링크로) ─────────────────────────

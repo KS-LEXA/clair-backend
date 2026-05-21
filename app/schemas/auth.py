@@ -77,6 +77,7 @@ class MyInfoResponse(BaseModel):
     email: str
     nickname: str
     has_password: bool
+    profile_image: Optional[str] = None
     marketing_agreed: bool
     created_at: datetime
     updated_at: datetime

@@ -1,8 +1,12 @@
 import hashlib
+import os
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Optional
 from urllib.parse import urlencode, quote
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 import httpx
 from app.core.config import settings
@@ -12,6 +16,16 @@ from app.models.social_account import SocialAccount
 from app.models.password_reset import PasswordResetToken
 from app.models.email_verification import EmailVerification
 from app.integrations.email_client import send_email
+
+
+PROFILE_IMAGE_SUBDIR = "profile_images"
+
+
+def profile_image_url(user: User) -> Optional[str]:
+    """DB의 상대 경로를 backend_base_url과 조합한 절대 URL로 변환. 없으면 None."""
+    if not user.profile_image_path:
+        return None
+    return f"{settings.backend_base_url.rstrip('/')}/{user.profile_image_path.lstrip('/')}"
 
 
 def signup(email: str, nickname: str, password: str, db: Session, marketing_agreed: bool = False) -> User:
@@ -70,6 +84,58 @@ def update_nickname(user: User, new_nickname: str, db: Session) -> User:
     user.nickname = new_nickname.strip()
     db.commit()
     db.refresh(user)
+    return user
+
+
+async def update_profile_image(user: User, file: UploadFile, db: Session) -> User:
+    if not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="파일명이 없습니다.")
+    ext = Path(file.filename).suffix.lower()
+    if ext not in settings.profile_image_allowed_extensions_list:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"지원하지 않는 이미지 형식입니다: {ext} (허용: {settings.profile_image_allowed_extensions})",
+        )
+
+    profile_dir = Path(settings.upload_dir) / PROFILE_IMAGE_SUBDIR
+    profile_dir.mkdir(parents=True, exist_ok=True)
+
+    stored_filename = f"{user.id}_{uuid.uuid4().hex}{ext}"
+    file_path = profile_dir / stored_filename
+
+    size = 0
+    try:
+        with open(file_path, "wb") as f:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > settings.profile_image_max_size_bytes:
+                    f.close()
+                    os.remove(file_path)
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=f"이미지 크기가 {settings.profile_image_max_size_mb}MB를 초과합니다.",
+                    )
+                f.write(chunk)
+    except HTTPException:
+        raise
+    except Exception as e:
+        if file_path.exists():
+            os.remove(file_path)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"파일 저장 중 오류: {e}")
+
+    old_relative = user.profile_image_path
+    user.profile_image_path = f"{PROFILE_IMAGE_SUBDIR}/{stored_filename}"
+    db.commit()
+    db.refresh(user)
+
+    if old_relative:
+        old_path = Path(settings.upload_dir) / old_relative
+        try:
+            if old_path.is_file():
+                old_path.unlink()
+        except OSError:
+            pass
+
     return user
 
 
