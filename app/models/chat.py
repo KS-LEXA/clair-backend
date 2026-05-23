@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, Text, JSON, ForeignKey, Enum, func
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 import enum
 from app.db.session import Base
 
@@ -31,7 +31,8 @@ class ChatSession(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     user = relationship("User", backref="chat_sessions")
-    contract = relationship("Contract", backref="chat_session")
+    # passive_deletes=True: Contract 삭제 시 DB의 ON DELETE SET NULL에 위임 (불필요한 ORM UPDATE 회피)
+    contract = relationship("Contract", backref=backref("chat_session", passive_deletes=True))
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan", order_by="ChatMessage.created_at")
 
 
