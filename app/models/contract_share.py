@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, func
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from app.db.session import Base
 
 
@@ -21,4 +21,6 @@ class ContractShare(Base):
     revoked_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
-    contract = relationship("Contract", backref="shares")
+    # passive_deletes=True: Contract 삭제 시 ORM이 자식 FK를 NULL로 UPDATE하지 않고
+    # DB의 ON DELETE CASCADE에 위임 (contract_id가 NOT NULL이라 ORM UPDATE는 IntegrityError 유발)
+    contract = relationship("Contract", backref=backref("shares", passive_deletes=True))
