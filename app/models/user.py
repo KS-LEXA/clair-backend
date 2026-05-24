@@ -9,6 +9,7 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     nickname = Column(String(100), nullable=False)
     password_hash = Column(String(255), nullable=True)
+    profile_image_path = Column(String(500), nullable=True)
     email_verified_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     marketing_agreed = Column(Boolean, nullable=False, default=False, server_default="0")
