@@ -24,8 +24,11 @@ class ContractDetailResponse(BaseModel):
     extracted_text: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    analysis_completed_at: Optional[datetime] = None
     analysis: Optional["AnalysisResultResponse"] = None
     risk_clauses: Optional[List["RiskClauseResponse"]] = None
+    clauses: Optional[List["ClauseResponse"]] = None
+    compliance_results: Optional[List["ComplianceResultResponse"]] = None
     safety_score: Optional[int] = None
     safety_score_detail: Optional[Any] = None
     model_config = {"from_attributes": True}
@@ -85,6 +88,17 @@ class ClauseListResponse(BaseModel):
     contract_id: int
     total: int
     clauses: List[ClauseResponse]
+
+
+class ComplianceResultResponse(BaseModel):
+    id: int
+    clause_id: str
+    clause_title: Optional[str] = None
+    clause_text: str
+    status: str
+    reason: str
+    law_references: Optional[List[Any]] = None
+    model_config = {"from_attributes": True}
 
 
 class AnalyzeAcceptedResponse(BaseModel):

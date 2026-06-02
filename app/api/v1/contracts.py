@@ -9,6 +9,7 @@ from app.schemas.contract import (
     ContractUploadResponse, ContractDetailResponse, ContractListResponse, ContractListItem,
     AnalysisResultResponse, RiskClauseResponse, MessageResponse,
     AnalyzeAcceptedResponse, ContractStatusResponse, ClauseResponse, ClauseListResponse,
+    ComplianceResultResponse,
 )
 from app.schemas.share import (
     ShareCreateRequest, ShareCreateResponse,
@@ -84,11 +85,24 @@ def api_get_contract(contract_id: int, user: User = Depends(get_current_user), d
                                            problematic_text=rc.problematic_text,
                                            evidence_clause_ids=rc.evidence_clause_ids, evidence_text=rc.evidence_text)
                         for rc in contract.risk_clauses]
+    clauses = [
+        ClauseResponse(id=c.id, clause_id=c.clause_id, title=c.title, text=c.text,
+                       page_refs=c.page_refs, order=c.order)
+        for c in (contract.clauses or [])
+    ] or None
+    compliance_results = [
+        ComplianceResultResponse(id=cr.id, clause_id=cr.clause_id, clause_title=cr.clause_title,
+                                 clause_text=cr.clause_text, status=cr.status, reason=cr.reason,
+                                 law_references=cr.law_references)
+        for cr in (contract.compliance_results or [])
+    ] or None
     score_detail = compute_safety_score(contract.risk_clauses or [])
     return ContractDetailResponse(id=contract.id, original_filename=contract.original_filename, file_size=contract.file_size,
                                   file_type=contract.file_type, status=contract.status.value, contract_type=contract.contract_type.value,
                                   extracted_text=contract.extracted_text, created_at=contract.created_at, updated_at=contract.updated_at,
+                                  analysis_completed_at=contract.analysis_completed_at,
                                   analysis=analysis, risk_clauses=risk_clauses,
+                                  clauses=clauses, compliance_results=compliance_results,
                                   safety_score=score_detail["score"],
                                   safety_score_detail=score_detail)
 
