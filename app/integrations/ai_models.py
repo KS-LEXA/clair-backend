@@ -37,6 +37,11 @@ class AIExtractionResult(BaseModel):
     end_date: AIFieldValue          # 계약 종료일
     amount_text: AIFieldValue       # 금액 원문 ex) "5,000만원"
     amount_value: AIFieldValue      # 금액 숫자 ex) 50000000.0
+    hourly_wage: AIFieldValue = AIFieldValue()          # 시간급 (원 단위)
+    weekly_work_hours: AIFieldValue = AIFieldValue()    # 주당 실근로시간
+    weekly_work_days: AIFieldValue = AIFieldValue()     # 주당 근무일수
+    monthly_wage: AIFieldValue = AIFieldValue()         # 월급여 (명시 or 계산값)
+    monthly_wage_is_estimated: bool = False             # True면 추정값
 
 
 # 위험 조항 탐지 결과 1건
