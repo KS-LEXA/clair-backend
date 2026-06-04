@@ -254,15 +254,21 @@ async def request_email_verification(email: str, db: Session) -> None:
         db.add(record)
     db.commit()
 
-    await send_email(
-        to=email,
-        subject="[CLAIR] 이메일 인증 코드",
-        template="email_verification.html",
-        context={
-            "code": code,
-            "expire_minutes": settings.email_verification_code_expire_minutes,
-        },
-    )
+    try:
+        await send_email(
+            to=email,
+            subject="[CLAIR] 이메일 인증 코드",
+            template="email_verification.html",
+            context={
+                "code": code,
+                "expire_minutes": settings.email_verification_code_expire_minutes,
+            },
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"이메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요. ({type(e).__name__})",
+        )
 
 
 def confirm_email_verification(email: str, code: str, db: Session) -> None:
