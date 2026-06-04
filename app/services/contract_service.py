@@ -278,6 +278,20 @@ async def analyze_contract_background(contract_id: int) -> None:
         clause_rows = ai_clauses_to_contract_clauses(ai_resp.clauses, contract_id)
         db.add_all(clause_rows)
 
+        # 월급여 후처리: AI가 계산하지 못한 경우 백엔드에서 시간급 × 근무시간으로 계산
+        extraction = ai_resp.extraction
+        if extraction.monthly_wage.value is None:
+            try:
+                hw = float(extraction.hourly_wage.value) if extraction.hourly_wage.value else None
+                wwh = float(extraction.weekly_work_hours.value) if extraction.weekly_work_hours.value else None
+                if hw and wwh:
+                    weekly_holiday = (wwh / 40) * 8 if wwh >= 15 else 0
+                    estimated = round(hw * (wwh + weekly_holiday) * (365 / 12 / 7))
+                    extraction.monthly_wage = type(extraction.monthly_wage)(value=estimated)
+                    extraction.monthly_wage_is_estimated = True
+            except (TypeError, ValueError):
+                pass
+
         # 분석 결과 저장
         analysis = ai_analysis_to_analysis_result(ai_resp, contract_id, duration_seconds=duration)
         db.add(analysis)
