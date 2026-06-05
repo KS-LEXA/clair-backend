@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     backend_base_url: str = "http://localhost:8000"
     profile_image_max_size_mb: int = 5
-    profile_image_allowed_extensions: str = ".png,.jpg,.jpeg"
+    profile_image_allowed_extensions: str = ".png,.jpg,.jpeg,.webp"
 
     secret_key: str = "change-this-to-random-secret-key"
     access_token_expire_minutes: int = 60

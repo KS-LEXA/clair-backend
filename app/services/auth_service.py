@@ -139,6 +139,26 @@ async def update_profile_image(user: User, file: UploadFile, db: Session) -> Use
     return user
 
 
+def delete_profile_image(user: User, db: Session) -> User:
+    """본인 프로필 이미지 삭제. 저장된 파일을 제거하고 경로를 비운다. 이미지가 없으면 그대로 반환."""
+    old_relative = user.profile_image_path
+    if not old_relative:
+        return user
+
+    user.profile_image_path = None
+    db.commit()
+    db.refresh(user)
+
+    old_path = Path(settings.upload_dir) / old_relative
+    try:
+        if old_path.is_file():
+            old_path.unlink()
+    except OSError:
+        pass
+
+    return user
+
+
 def change_password(user: User, current_password: str, new_password: str, db: Session) -> None:
     if not user.password_hash:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="소셜 로그인 계정은 비밀번호를 변경할 수 없습니다.")
