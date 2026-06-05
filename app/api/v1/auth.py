@@ -17,7 +17,7 @@ from app.schemas.auth import (
 from app.schemas.contract import MessageResponse
 from app.services.auth_service import (
     signup, login, refresh_access_token, update_nickname, change_password,
-    update_profile_image, profile_image_url,
+    update_profile_image, delete_profile_image, profile_image_url,
     request_password_reset, verify_reset_token, confirm_password_reset,
     request_email_verification, confirm_email_verification,
     get_google_auth_url, google_login,
@@ -78,13 +78,23 @@ def api_change_password(body: ChangePasswordRequest, user: User = Depends(get_cu
     return MessageResponse(message="비밀번호가 변경되었습니다.")
 
 
-@router.post("/me/profile-image", response_model=MyInfoResponse, summary="프로필 이미지 업로드")
+@router.api_route(
+    "/me/profile-image",
+    methods=["POST", "PATCH"],
+    response_model=MyInfoResponse,
+    summary="프로필 이미지 업로드/수정",
+)
 async def api_upload_profile_image(
-    file: UploadFile = File(..., description="프로필 이미지 (PNG/JPG/JPEG, 최대 5MB)"),
+    file: UploadFile = File(..., description="프로필 이미지 (PNG/JPG/JPEG/WEBP, 최대 5MB)"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     return _to_my_info(await update_profile_image(user=user, file=file, db=db))
+
+
+@router.delete("/me/profile-image", response_model=MyInfoResponse, summary="프로필 이미지 삭제")
+def api_delete_profile_image(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _to_my_info(delete_profile_image(user=user, db=db))
 
 
 # ── 비밀번호 재설정 (비로그인 상태에서 이메일 링크로) ─────────────────────────
