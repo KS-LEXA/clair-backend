@@ -44,22 +44,61 @@ KEY_INFO_LABELS = {
     "start_date": "계약 시작일",
     "end_date": "계약 종료일",
     "signing_date": "계약 체결일",
-    "contract_type": "계약 유형",
+    "contract_type": "계약서 유형",
     "amount_text": "급여",
     "amount_value": "급여 금액",
     "hourly_wage": "시급",
-    "monthly_wage": "월급여",
-    "monthly_wage_is_estimated": "월급여 추정 여부",
+    "monthly_wage": "월 급여",
+    "monthly_wage_is_estimated": "월 급여 추정 여부",
     "weekly_work_days": "주당 근무일",
     "weekly_work_hours": "주당 근무시간",
-    "counterparty_a": "회사명",
-    "counterparty_b": "근로자명",
+    "counterparty_a": "당사자 A",
+    "counterparty_b": "당사자 B",
+}
+
+# 위험 유형(risk_type)을 PDF 표시용 한국어로 변환
+RISK_TYPE_LABELS = {
+    "payment": "지급/급여",
+    "liability": "책임",
+    "termination": "해지",
+    "confidentiality": "비밀유지",
+    "penalty": "위약금",
+    "renewal": "갱신",
+    "ip": "지식재산권",
+    "etc": "기타",
+    "other": "기타",
+}
+
+# 계약서 유형(ContractType enum)을 PDF 표시용 한국어로 변환
+CONTRACT_TYPE_LABELS = {
+    "labor": "근로계약서",
+    "employment": "근로계약서",
+    "service": "용역계약서",
+    "freelance": "프리랜서 계약서",
+    "nda": "비밀유지계약서",
+    "company_rule": "취업규칙",
+    "other": "기타",
+    "unknown": "미분류",
 }
 
 
 def format_key_info_label(key: str) -> str:
     """핵심 정보 key를 한국어 라벨로 변환. 매핑이 없으면 원래 key를 그대로 반환."""
     return KEY_INFO_LABELS.get(key, key)
+
+
+def format_risk_type(risk_type) -> str:
+    """위험 유형을 한국어로 변환. 매핑이 없으면 원래 값을 그대로 반환."""
+    if risk_type is None:
+        return "-"
+    return RISK_TYPE_LABELS.get(str(risk_type).lower(), str(risk_type))
+
+
+def format_contract_type(contract_type) -> str:
+    """계약서 유형 enum 값을 한국어로 변환. 매핑이 없으면 원래 값을 그대로 반환."""
+    if contract_type is None:
+        return "-"
+    return CONTRACT_TYPE_LABELS.get(str(contract_type).lower(), str(contract_type))
 
 
 def format_pdf_value(value) -> str:
@@ -78,6 +117,8 @@ _jinja_env = Environment(
     autoescape=select_autoescape(["html"]),
 )
 _jinja_env.filters["key_info_label"] = format_key_info_label
+_jinja_env.filters["risk_type_label"] = format_risk_type
+_jinja_env.filters["contract_type_label"] = format_contract_type
 _jinja_env.filters["pdf_value"] = format_pdf_value
 
 
