@@ -64,8 +64,13 @@ def api_list_contracts(skip: int = Query(0, ge=0), limit: int = Query(20, ge=1, 
                        user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     total, contracts = get_contracts_by_user(user_id=user.id, db=db, skip=skip, limit=limit)
     return ContractListResponse(total=total, contracts=[
-        ContractListItem(id=c.id, original_filename=c.original_filename, file_type=c.file_type,
-                         status=c.status.value, contract_type=c.contract_type.value, created_at=c.created_at)
+        ContractListItem(
+            id=c.id, original_filename=c.original_filename, file_type=c.file_type,
+            status=c.status.value, analysis_status=c.status.value, contract_type=c.contract_type.value,
+            # 분석 완료 계약서만 안전점수 노출 — 상세 API와 동일하게 compute_safety_score 사용
+            safety_score=(compute_safety_score(c.risk_clauses or [])["score"]
+                          if c.status.value == "completed" else None),
+            created_at=c.created_at, updated_at=c.updated_at)
         for c in contracts])
 
 

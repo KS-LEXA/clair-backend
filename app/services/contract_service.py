@@ -7,7 +7,7 @@ from io import BytesIO
 from pathlib import Path
 from PIL import Image, ImageOps
 from fastapi import UploadFile, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.contract import Contract, ContractStatus
@@ -198,7 +198,14 @@ def get_contract_by_id(contract_id: int, user_id: int, db: Session) -> Contract:
 def get_contracts_by_user(user_id: int, db: Session, skip: int = 0, limit: int = 20):
     query = db.query(Contract).filter(Contract.user_id == user_id)
     total = query.count()
-    contracts = query.order_by(Contract.created_at.desc()).offset(skip).limit(limit).all()
+    # safety_score 계산을 위해 risk_clauses를 함께 로드 — 목록 N+1 방지
+    contracts = (
+        query.options(selectinload(Contract.risk_clauses))
+        .order_by(Contract.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return total, contracts
 
 
