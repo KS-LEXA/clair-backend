@@ -4,73 +4,86 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CLAIR Backend is a FastAPI-based AI contract analysis system (Korean-language app). It handles contract document upload, AI-powered analysis (Gemini), and chat-based Q&A (LangChain RAG). The backend uses MySQL with SQLAlchemy ORM and JWT-based authentication with social login support (Google, Naver, Kakao).
+CLAIR Backend is a FastAPI-based AI contract-analysis system (Korean-language app, port 8000). It handles contract upload, AI-powered analysis, chat-based Q&A, notifications, and public share links. MySQL + SQLAlchemy ORM, JWT auth with social login (Google/Naver/Kakao), and email-based flows (signup verification, password reset).
+
+**The AI itself lives in a separate service (`clair-ai`, default `http://localhost:8001`).** This backend never calls Gemini/LLMs directly — it POSTs to clair-ai's `/analyze` and `/qa` endpoints. `GEMINI_API_KEY` in config is vestigial; `AI_SERVICE_URL` is what matters.
 
 ## Commands
 
 ```bash
 # Setup
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-
-# Database (MySQL required)
 mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS clair_db DEFAULT CHARACTER SET utf8mb4;"
+cp .env.example .env          # then fill DB_PASSWORD, SECRET_KEY, AI_SERVICE_URL, etc.
 
 # Run dev server
+source venv/bin/activate
 uvicorn app.main:app --reload --port 8000
+# Swagger /docs · ReDoc /redoc · Health /health
 
-# API docs
-# Swagger: http://localhost:8000/docs
-# ReDoc:   http://localhost:8000/redoc
-# Health:  http://localhost:8000/health
+# DB migrations (Alembic)
+alembic upgrade head                          # apply (run once on fresh DB)
+alembic revision --autogenerate -m "설명"      # generate migration from model changes
+alembic downgrade -1                          # roll back one
 ```
 
-There is currently no test runner configured. The `tests/` directory exists but is empty.
+There is **no test runner configured** — `tests/` exists but is empty, and `pyproject.toml` declares no pytest config. Verify changes by running the server and exercising endpoints (the codebase convention; see git history / PR descriptions).
+
+> macOS networking gotcha: `localhost` can resolve to IPv6 (`::1`) while uvicorn binds IPv4, breaking backend↔clair-ai calls. Use `127.0.0.1` in `AI_SERVICE_URL` and CORS origins.
 
 ## Architecture
 
-The app follows a layered architecture: **API → Services → Models/DB**.
+Layered: **API (`app/api/v1/`) → Services (`app/services/`) → Models/DB (`app/models/`, `app/db/`)**. Route handlers stay thin — no business logic; all logic lives in services, which receive a SQLAlchemy `db` session and the current `User`. Pydantic v2 DTOs in `app/schemas/` are kept separate from ORM models.
 
-- **[app/api/v1/](app/api/v1/)** — Route handlers only; no business logic. Three routers: `auth`, `contracts`, `chat`.
-- **[app/services/](app/services/)** — All business logic lives here. Services receive a SQLAlchemy `db` session and current user as arguments.
-- **[app/models/](app/models/)** — SQLAlchemy ORM models (`User`, `SocialAccount`, `Contract`, `AnalysisResult`, `RiskClause`, `ChatSession`, `ChatMessage`).
-- **[app/schemas/](app/schemas/)** — Pydantic v2 request/response DTOs. Separate from models.
-- **[app/core/config.py](app/core/config.py)** — Pydantic Settings loaded from `.env`. Single `settings` singleton used throughout.
-- **[app/core/security.py](app/core/security.py)** — JWT creation/decoding, password hashing, and `get_current_user` FastAPI dependency.
-- **[app/db/session.py](app/db/session.py)** — SQLAlchemy engine and `get_db()` dependency. `get_db()` is injected into every route that touches the DB.
-- **[app/db/init_db.py](app/db/init_db.py)** — `init_db()` called on startup (via lifespan in `main.py`) to create all tables via `Base.metadata.create_all()`.
-- **[app/integrations/](app/integrations/)** — clair-ai HTTP 연동 계층: `ai_client.py`(싱글턴 HTTP 클라이언트), `ai_models.py`(clair-ai 응답 Pydantic 스키마), `mappers.py`(AI 응답 → ORM 변환 순수 함수). **clair-ai 응답 포맷이 바뀌면 `ai_models.py`를 반드시 함께 갱신** — 그렇지 않으면 BackgroundTask 안에서 Pydantic 검증 에러가 조용히 삼켜져 계약서가 PROCESSING에서 멈춤.
+Five routers, all mounted in [app/main.py](app/main.py): `auth`, `contracts`, `chat`, `notifications`, `shares`.
 
-## Key Design Patterns
+### Core singletons & dependencies
+- [app/core/config.py](app/core/config.py) — `settings` singleton (Pydantic Settings from `.env`). Single source of truth for all config; has computed properties like `database_url`, `*_list`, `*_bytes`.
+- [app/core/security.py](app/core/security.py) — JWT create/decode, password hashing, and the `get_current_user` dependency (`OAuth2PasswordBearer`). Access token 60 min, refresh 7 days.
+- [app/db/session.py](app/db/session.py) — `engine`, `SessionLocal`, `Base`, and the `get_db()` dependency injected into every DB-touching route.
+- [app/db/init_db.py](app/db/init_db.py) — `init_db()` runs `Base.metadata.create_all()` on startup (lifespan in main.py). **Schema is managed by BOTH this and Alembic** — `create_all` will create any missing table on boot, so a forgotten migration can silently "work" locally; always also write the Alembic migration for schema changes.
 
-**Authentication flow**: `OAuth2PasswordBearer` → `get_current_user` dependency extracts user from JWT Bearer token. Access tokens expire in 60 min, refresh tokens in 7 days. Social login (Google/Naver/Kakao) uses OAuth2 authorization code flow — the callback endpoints exchange the code for tokens via `httpx`, then call `_social_login()` in [app/services/auth_service.py](app/services/auth_service.py) which upserts `SocialAccount` + `User` records and issues app JWTs. Social users have `password_hash=None`.
+### Contract analysis flow (async state machine)
+Status: `UPLOADED → PENDING → PROCESSING → COMPLETED / FAILED` (`ContractStatus` enum).
 
-**Contract file storage**: Uploaded files are stored under `UPLOAD_DIR` organized by date (`YYYY/MM/DD/`). The `stored_filename` in the DB is a UUID-based name; `original_filename` preserves the user-facing name. Allowed formats: `.pdf,.png,.jpg,.jpeg,.txt,.docx`; max size defaults to 20 MB (configurable via `MAX_FILE_SIZE_MB`).
+`POST /contracts/{id}/analyze` returns **202 immediately**, then runs `analyze_contract_background(contract_id)` as a FastAPI `BackgroundTask`. That background task **opens its own `SessionLocal()`** (the request-scoped `db` is already closed by the time it runs) and walks the contract through PROCESSING → COMPLETED/FAILED. Frontend polls `GET /contracts/{id}/status` or `GET /contracts/{id}`.
 
-**AI integration**: `POST /api/v1/contracts/{id}/analyze` (202) runs `analyze_contract_background()` as a FastAPI `BackgroundTask` with its own DB session (`PENDING → PROCESSING → COMPLETED/FAILED`); the frontend polls `GET /api/v1/contracts/{id}`. `chat_service.send_message()` calls clair-ai `/qa` with the contract's `ContractClause` rows. Both live in [app/services/contract_service.py](app/services/contract_service.py) and [app/services/chat_service.py](app/services/chat_service.py) and call clair-ai through [app/integrations/ai_client.py](app/integrations/ai_client.py).
+**Critical gotcha:** BackgroundTask exceptions are swallowed (not surfaced to the request). If a contract is stuck in `PROCESSING`, the cause is usually an unhandled error in the background task or an AI-response schema mismatch (see below).
 
-**Safety Score**: `compute_safety_score(risk_clauses)` in [app/services/scoring.py](app/services/scoring.py) — 100점 기준 카테고리 가중치 × severity × confidence 감점. `GET /api/v1/contracts/{id}` 응답에 `safety_score`, `safety_score_detail`, 그리고 `clauses`·`compliance_results`(조항/법령 준수 결과)를 포함.
+### AI integration (`app/integrations/`)
+- [ai_client.py](app/integrations/ai_client.py) — `AIServiceClient` singleton `ai_client`. **The only place that talks to clair-ai.** Services import `ai_client`, never `httpx` or AI types directly. `analyze_contract()` sends a server-local file path (clair-ai reads the file itself); `answer_question()` sends serialized clause dicts as RAG context.
+- [ai_models.py](app/integrations/ai_models.py) — Pydantic models for clair-ai responses. **When clair-ai adds a field, mirror it here.** A missing/changed field raises a validation error inside the background task that gets swallowed → contract stuck in PROCESSING.
+- [mappers.py](app/integrations/mappers.py) — pure functions converting AI response models → ORM rows (`ContractClause`, `RiskClause`, `ComplianceResult`, `AnalysisResult`).
 
-**Alembic** is configured ([alembic/env.py](alembic/env.py) injects `settings.database_url` and imports all models). 모델 컬럼 추가 시: `python -m alembic revision --autogenerate -m "설명"` → `python -m alembic upgrade head`. `python -m alembic check`로 모델-DB 동기화 확인. (`init_db()`의 `create_all()`도 여전히 startup에서 실행되므로 신규 테이블은 자동 생성됨)
+### Safety scoring ([app/services/scoring.py](app/services/scoring.py))
+`compute_safety_score(risk_clauses)` starts at 100 and deducts `CATEGORY_WEIGHTS[risk_type] × severity × confidence`, floored at 25. `GET /contracts/{id}` returns `safety_score` (int) and `safety_score_detail` (dict). Computed in the backend, not by the AI.
 
-## Environment Variables
+### PDF reports ([app/services/pdf_service.py](app/services/pdf_service.py))
+WeasyPrint (HTML→PDF) renders a Jinja2 template ([app/templates/pdf/contract_report.html](app/templates/pdf/contract_report.html)) for `GET /contracts/{id}/download/pdf` (COMPLETED contracts only). Korean display labels (risk levels, `key_info` keys) are mapped at render time via Jinja filters — the underlying data/API responses are never mutated for display.
+> macOS gotcha encoded at the top of pdf_service.py: WeasyPrint dlopens pango/glib, but SIP strips `DYLD_*` from child procs. The module sets `DYLD_FALLBACK_LIBRARY_PATH` to the Homebrew lib dir **before** importing weasyprint — keep that ordering.
 
-Required in `.env`:
-```
-DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
-UPLOAD_DIR=./uploads
-MAX_FILE_SIZE_MB=20
-SECRET_KEY
-GEMINI_API_KEY
-AI_SERVICE_URL=http://127.0.0.1:8001   # macOS: localhost 대신 반드시 127.0.0.1 (IPv6 resolve 회피)
-AI_SERVICE_TIMEOUT=300.0
-CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+### File storage & static serving
+Uploaded contracts go under `UPLOAD_DIR` by date (`YYYY/MM/DD/`); `stored_filename` is UUID-based, `original_filename` is preserved. Multi-image uploads are merged into a single PDF (`_merge_images_to_pdf`, Pillow). Allowed: `.pdf,.png,.jpg,.jpeg,.txt,.docx`, max 20 MB.
 
-# Social login (optional — leave empty to disable)
-GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI
-NAVER_CLIENT_ID, NAVER_CLIENT_SECRET, NAVER_REDIRECT_URI
-KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET, KAKAO_REDIRECT_URI
-```
+Profile images are stored separately under `UPLOAD_DIR/profile_images/` and are the **only** thing served statically — main.py mounts just that subdir (not all of `UPLOAD_DIR`) so contract files are never web-exposed. `User.profile_image_path` holds a relative path; `profile_image_url()` turns it into an absolute URL via `BACKEND_BASE_URL`. Allowed: `.png,.jpg,.jpeg,.webp`, max 5 MB.
 
-Default redirect URIs point to `http://localhost:8000/api/v1/auth/{provider}/callback`.
+### Auth & email flows ([app/services/auth_service.py](app/services/auth_service.py))
+- **Signup requires prior email verification**: `email-verification/request` sends a 6-digit code; `email-verification/confirm` marks an `EmailVerification` row verified; `signup` consumes (deletes) that row. No verified row → signup 400s.
+- **Social login** (Google/Naver/Kakao): OAuth2 code flow. Callback exchanges code for tokens via `httpx`, then `_social_login()` upserts `SocialAccount` + `User` and issues app JWTs. Social users have `password_hash=None` (and thus can't change password).
+- **Password reset**: emailed token (`PasswordResetToken`), verified then consumed. Endpoints intentionally return identical messages regardless of whether the email exists.
+- Email sending is in [app/integrations/email_client.py](app/integrations/email_client.py) (fastapi-mail / SMTP).
+
+### Contract sharing ([app/services/share_service.py](app/services/share_service.py))
+Owners create tokenized share links (`ContractShare`); the public `/api/v1/shares/{token}` router lets unauthenticated users view results. Share access uses short-lived per-link access tokens distinct from user JWTs.
+
+## Models
+`User`, `SocialAccount`, `Contract`, `ContractClause`, `AnalysisResult`, `RiskClause`, `ComplianceResult` (in [analysis.py](app/models/analysis.py)), `ChatSession`, `ChatMessage`, `Notification`, `ContractShare`, `PasswordResetToken`, `EmailVerification`. New models must be imported in [app/db/init_db.py](app/db/init_db.py) so `create_all` and Alembic autogenerate see them.
+
+## Conventions
+- User-facing strings, commit messages, and code comments are in **Korean** — match the surrounding style.
+- Runtime is **Python 3.9** (venv). Do **not** use PEP 604 unions (`X | None`) as runtime annotations — they crash on 3.9. Files use `from __future__ import annotations` where modern syntax appears; keep that import if you add such syntax.
+
+## Environment Variables (`.env`)
+Required: `DB_HOST/PORT/USER/PASSWORD/NAME`, `SECRET_KEY`, `UPLOAD_DIR`, `AI_SERVICE_URL` (+ `AI_SERVICE_TIMEOUT`), `CORS_ORIGINS`, `BACKEND_BASE_URL`, `FRONTEND_BASE_URL`.
+Optional/feature: SMTP (`SMTP_HOST/PORT/USER/PASSWORD`, `MAIL_FROM`) for email flows; social login (`{GOOGLE,NAVER,KAKAO}_CLIENT_ID/SECRET/REDIRECT_URI`) — leave empty to disable. See [app/core/config.py](app/core/config.py) for the full list and defaults.
