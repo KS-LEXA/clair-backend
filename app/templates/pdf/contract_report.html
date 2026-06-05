@@ -80,7 +80,7 @@
   <div class="header">
     <h1>{{ original_filename }}</h1>
     <div class="meta">
-      <span class="label label-contract-type">{{ contract_type }}</span>
+      <span class="label label-contract-type">{{ contract_type | contract_type_label }}</span>
       &nbsp;
       분석일: {{ analyzed_at.strftime('%Y-%m-%d %H:%M') if analyzed_at else '-' }}
       &nbsp;·&nbsp;
@@ -125,7 +125,7 @@
       <div class="risk-card risk-{{ r.risk_level }}">
         <div class="risk-meta">
           <span class="risk-badge badge-{{ r.risk_level }}">위험도 {{ r.risk_level_label }}</span>
-          <strong>{{ r.risk_type }}</strong>
+          <strong>{{ r.risk_type | risk_type_label }}</strong>
           {% if r.clause_number %}&nbsp;·&nbsp;{{ r.clause_number }}{% endif %}
         </div>
         {% if r.explanation %}
