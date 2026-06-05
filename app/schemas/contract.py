@@ -39,8 +39,14 @@ class ContractListItem(BaseModel):
     original_filename: str
     file_type: str
     status: str
+    # status와 동일한 분석 생애주기 값 — 프론트 분석 완료 판단용
+    analysis_status: str
     contract_type: str
+    # 분석 완료(COMPLETED) 계약서만 0~100 정수, 그 외에는 null.
+    # 상세 API(GET /contracts/{id})의 safety_score와 동일 기준(compute_safety_score)
+    safety_score: Optional[int] = None
     created_at: datetime
+    updated_at: datetime
     model_config = {"from_attributes": True}
 
 
