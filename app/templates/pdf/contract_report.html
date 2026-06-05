@@ -94,13 +94,13 @@
     <table class="kv">
       {% for key, val in key_info.items() %}
         <tr>
-          <td class="k">{{ key }}</td>
+          <td class="k">{{ key | key_info_label }}</td>
           <td class="v">
             {% if val is mapping %}
-              {{ val.get('value', '-') }}
+              {{ val.get('value') | pdf_value }}
               {% if val.get('reason') %}<br><span class="meta">근거: {{ val.get('reason') }}</span>{% endif %}
             {% else %}
-              {{ val if val is not none else '-' }}
+              {{ val | pdf_value }}
             {% endif %}
           </td>
         </tr>

@@ -35,13 +35,50 @@ from app.models.analysis import ContractClause
 
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates" / "pdf"
+
+
+_RISK_LEVEL_LABELS = {"high": "높음", "medium": "보통", "low": "낮음"}
+
+# 핵심 정보 테이블의 key를 PDF 표시용 한국어 라벨로 변환 (표시용 — 원본 데이터/API 응답은 그대로 유지)
+KEY_INFO_LABELS = {
+    "start_date": "계약 시작일",
+    "end_date": "계약 종료일",
+    "signing_date": "계약 체결일",
+    "contract_type": "계약 유형",
+    "amount_text": "급여",
+    "amount_value": "급여 금액",
+    "hourly_wage": "시급",
+    "monthly_wage": "월급여",
+    "monthly_wage_is_estimated": "월급여 추정 여부",
+    "weekly_work_days": "주당 근무일",
+    "weekly_work_hours": "주당 근무시간",
+    "counterparty_a": "회사명",
+    "counterparty_b": "근로자명",
+}
+
+
+def format_key_info_label(key: str) -> str:
+    """핵심 정보 key를 한국어 라벨로 변환. 매핑이 없으면 원래 key를 그대로 반환."""
+    return KEY_INFO_LABELS.get(key, key)
+
+
+def format_pdf_value(value) -> str:
+    """PDF 표시용 값 포맷팅: None은 '-', boolean은 예/아니오."""
+    if value is None:
+        return "-"
+    if value is True:
+        return "예"
+    if value is False:
+        return "아니오"
+    return str(value)
+
+
 _jinja_env = Environment(
     loader=FileSystemLoader(_TEMPLATE_DIR),
     autoescape=select_autoescape(["html"]),
 )
-
-
-_RISK_LEVEL_LABELS = {"high": "높음", "medium": "보통", "low": "낮음"}
+_jinja_env.filters["key_info_label"] = format_key_info_label
+_jinja_env.filters["pdf_value"] = format_pdf_value
 
 
 def generate_contract_pdf(contract_id: int, user_id: int, db: Session) -> tuple[bytes, str]:
