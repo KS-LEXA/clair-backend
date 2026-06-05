@@ -5,6 +5,7 @@ from urllib.parse import quote
 from app.db.session import get_db
 from app.core.security import get_current_user
 from app.models.user import User
+from app.models.contract import ContractStatus
 from app.schemas.contract import (
     ContractUploadResponse, ContractDetailResponse, ContractListResponse, ContractListItem,
     AnalysisResultResponse, RiskClauseResponse, MessageResponse,
@@ -71,39 +72,52 @@ def api_list_contracts(skip: int = Query(0, ge=0), limit: int = Query(20, ge=1, 
 @router.get("/{contract_id}", response_model=ContractDetailResponse, summary="계약서 상세 조회")
 def api_get_contract(contract_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     contract = get_contract_by_id(contract_id, user.id, db)
+
+    # 분석 완료(COMPLETED) 상태에서만 분석 결과를 노출한다.
+    # 재분석 중에는 이전 분석 행이 DB에 남아 있으므로(새 결과가 준비될 때까지 보존),
+    # 상태로 게이팅하지 않으면 PENDING/PROCESSING/FAILED 중에도 예전 결과가 내려가
+    # 프론트 로딩 화면이 완료로 오판하고 직전 계약서 결과를 보여주는 문제가 생긴다.
     analysis = None
-    if contract.analysis_result:
-        analysis = AnalysisResultResponse(key_info=contract.analysis_result.key_info, clauses=contract.analysis_result.clauses,
-                                          summary=contract.analysis_result.summary, detected_objects=contract.analysis_result.detected_objects,
-                                          created_at=contract.analysis_result.created_at)
-    risk_clauses = None
-    if contract.risk_clauses:
+    risk_clauses: list = []
+    clauses = None
+    compliance_results: list = []
+    safety_score = None
+    score_detail = None
+
+    if contract.status == ContractStatus.COMPLETED:
+        if contract.analysis_result:
+            analysis = AnalysisResultResponse(key_info=contract.analysis_result.key_info, clauses=contract.analysis_result.clauses,
+                                              summary=contract.analysis_result.summary, detected_objects=contract.analysis_result.detected_objects,
+                                              created_at=contract.analysis_result.created_at)
         risk_clauses = [RiskClauseResponse(id=rc.id, title=rc.title, clause_number=rc.clause_number,
                                            original_text=rc.original_text, risk_type=rc.risk_type,
                                            risk_level=rc.risk_level.value, severity_score=rc.severity_score,
                                            confidence=rc.confidence, explanation=rc.explanation,
                                            problematic_text=rc.problematic_text,
                                            evidence_clause_ids=rc.evidence_clause_ids, evidence_text=rc.evidence_text)
-                        for rc in contract.risk_clauses]
-    clauses = [
-        ClauseResponse(id=c.id, clause_id=c.clause_id, title=c.title, text=c.text,
-                       page_refs=c.page_refs, order=c.order)
-        for c in (contract.clauses or [])
-    ] or None
-    compliance_results = [
-        ComplianceResultResponse(id=cr.id, clause_id=cr.clause_id, clause_title=cr.clause_title,
-                                 clause_text=cr.clause_text, status=cr.status, reason=cr.reason,
-                                 law_references=cr.law_references)
-        for cr in (contract.compliance_results or [])
-    ] or None
-    score_detail = compute_safety_score(contract.risk_clauses or [])
+                        for rc in (contract.risk_clauses or [])]
+        clauses = [
+            ClauseResponse(id=c.id, clause_id=c.clause_id, title=c.title, text=c.text,
+                           page_refs=c.page_refs, order=c.order)
+            for c in (contract.clauses or [])
+        ] or None
+        compliance_results = [
+            ComplianceResultResponse(id=cr.id, clause_id=cr.clause_id, clause_title=cr.clause_title,
+                                     clause_text=cr.clause_text, status=cr.status, reason=cr.reason,
+                                     law_references=cr.law_references)
+            for cr in (contract.compliance_results or [])
+        ]
+        score_detail = compute_safety_score(contract.risk_clauses or [])
+        safety_score = score_detail["score"]
+
     return ContractDetailResponse(id=contract.id, original_filename=contract.original_filename, file_size=contract.file_size,
-                                  file_type=contract.file_type, status=contract.status.value, contract_type=contract.contract_type.value,
+                                  file_type=contract.file_type, status=contract.status.value,
+                                  analysis_status=contract.status.value, contract_type=contract.contract_type.value,
                                   extracted_text=contract.extracted_text, created_at=contract.created_at, updated_at=contract.updated_at,
                                   analysis_completed_at=contract.analysis_completed_at,
                                   analysis=analysis, risk_clauses=risk_clauses,
                                   clauses=clauses, compliance_results=compliance_results,
-                                  safety_score=score_detail["score"],
+                                  safety_score=safety_score,
                                   safety_score_detail=score_detail)
 
 

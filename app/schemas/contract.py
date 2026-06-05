@@ -20,6 +20,9 @@ class ContractDetailResponse(BaseModel):
     file_size: int
     file_type: str
     status: str
+    # status와 동일한 분석 생애주기 값(uploaded/pending/processing/completed/failed).
+    # 프론트가 분석 완료 판단에 사용 — analysis 페이로드와 항상 일관되게 내려간다.
+    analysis_status: str
     contract_type: str
     extracted_text: Optional[str] = None
     created_at: datetime
