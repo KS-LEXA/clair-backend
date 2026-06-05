@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from app.models.chat import ChatSession, ChatMessage, MessageSender, MessageType
 from app.models.contract import Contract, ContractStatus
@@ -41,7 +41,20 @@ def get_session_by_id(session_id: int, user_id: int, db: Session) -> ChatSession
 def get_sessions_by_user(user_id: int, db: Session, skip: int = 0, limit: int = 20):
     query = db.query(ChatSession).filter(ChatSession.user_id == user_id)
     total = query.count()
-    sessions = query.order_by(ChatSession.updated_at.desc()).offset(skip).limit(limit).all()
+    # 최신 대화 우선: last_message_at desc > updated_at desc > created_at desc.
+    # (MySQL은 DESC 정렬에서 NULL을 마지막에 두므로 대화 없는 세션이 하단으로 내려감)
+    # joinedload(contract): 목록 응답의 계약서 요약을 N+1 없이 함께 로드
+    sessions = (
+        query.options(joinedload(ChatSession.contract))
+        .order_by(
+            ChatSession.last_message_at.desc(),
+            ChatSession.updated_at.desc(),
+            ChatSession.created_at.desc(),
+        )
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return total, sessions
 
 

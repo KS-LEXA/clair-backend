@@ -8,6 +8,16 @@ class ChatSessionCreateRequest(BaseModel):
     title: Optional[str] = "새 대화"
 
 
+class ContractSummary(BaseModel):
+    # 채팅 세션에 연결된 계약서 요약 — 프론트 호환을 위해 파일명을 여러 키로 함께 제공
+    id: int
+    original_filename: Optional[str] = None
+    file_name: Optional[str] = None
+    title: Optional[str] = None
+    contract_type: Optional[str] = None
+    status: Optional[str] = None
+
+
 class ChatSessionResponse(BaseModel):
     id: int
     contract_id: Optional[int] = None
@@ -16,6 +26,8 @@ class ChatSessionResponse(BaseModel):
     last_message_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    # 계약서 연결 세션이면 채워지고, 일반 상담 세션이면 None
+    contract: Optional[ContractSummary] = None
     model_config = {"from_attributes": True}
 
 

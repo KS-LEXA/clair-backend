@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
@@ -12,6 +13,21 @@ from app.services.chat_service import create_session, get_session_by_id, get_ses
 router = APIRouter()
 
 
+def _contract_summary(contract) -> Optional[dict]:
+    """연결된 계약서를 프론트가 쓰기 쉬운 요약 dict로. 미연결(또는 계약서 삭제)이면 None."""
+    if contract is None:
+        return None
+    name = contract.original_filename
+    return {
+        "id": contract.id,
+        "original_filename": name,
+        "file_name": name,
+        "title": name.rsplit(".", 1)[0] if name else None,
+        "contract_type": contract.contract_type.value if contract.contract_type else None,
+        "status": contract.status.value if contract.status else None,
+    }
+
+
 def _session_to_response_dict(session) -> dict:
     return {
         "id": session.id,
@@ -21,6 +37,7 @@ def _session_to_response_dict(session) -> dict:
         "last_message_at": session.last_message_at,
         "created_at": session.created_at,
         "updated_at": session.updated_at,
+        "contract": _contract_summary(session.contract),
     }
 
 
