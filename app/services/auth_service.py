@@ -15,6 +15,8 @@ from app.models.user import User
 from app.models.social_account import SocialAccount
 from app.models.password_reset import PasswordResetToken
 from app.models.email_verification import EmailVerification
+from app.models.chat import ChatSession, ChatMessage
+from app.models.notification import Notification
 from app.integrations.email_client import send_email
 
 
@@ -168,6 +170,49 @@ def change_password(user: User, current_password: str, new_password: str, db: Se
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="새 비밀번호가 현재 비밀번호와 동일합니다.")
     user.password_hash = hash_password(new_password)
     db.commit()
+
+
+def delete_account(user: User, db: Session) -> None:
+    """회원 탈퇴 — 본인 계정과 연관 데이터를 모두 영구 삭제(hard delete)한다.
+
+    User에 cascade="all, delete-orphan"이 걸린 contracts·social_accounts는
+    db.delete(user)로 ORM 캐스케이드 삭제되지만, backref로만 연결된 채팅/알림/
+    비밀번호 재설정 토큰은 그대로 두면 ORM이 user_id를 NULL로 만들려다(컬럼이
+    NOT NULL) 실패하므로 db.delete(user) 전에 먼저 정리한다. 이메일 인증 레코드는
+    email 기준이라 함께 지운다. DB 커밋이 끝난 뒤 디스크의 계약서 파일·프로필
+    이미지를 제거한다(파일 삭제 실패는 무시 — 계정 삭제 자체는 유효).
+    """
+    # 1) 삭제 전 디스크 파일 경로 수집 (행이 사라지면 경로를 알 수 없음)
+    contract_file_paths = [c.file_path for c in user.contracts if c.file_path]
+    profile_relative = user.profile_image_path
+
+    # 2) ORM 캐스케이드가 없는 user 직속 데이터 정리 (채팅 메시지 → 세션 순)
+    session_ids = [row[0] for row in db.query(ChatSession.id).filter(ChatSession.user_id == user.id).all()]
+    if session_ids:
+        db.query(ChatMessage).filter(ChatMessage.session_id.in_(session_ids)).delete(synchronize_session=False)
+    db.query(ChatSession).filter(ChatSession.user_id == user.id).delete(synchronize_session=False)
+    db.query(Notification).filter(Notification.user_id == user.id).delete(synchronize_session=False)
+    db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id).delete(synchronize_session=False)
+    db.query(EmailVerification).filter(EmailVerification.email == user.email).delete(synchronize_session=False)
+
+    # 3) contracts·social_accounts는 ORM 캐스케이드(delete-orphan)로 함께 삭제
+    db.delete(user)
+    db.commit()
+
+    # 4) 커밋 성공 후 디스크 파일 제거
+    for fp in contract_file_paths:
+        try:
+            if fp and os.path.exists(fp):
+                os.remove(fp)
+        except OSError:
+            pass
+    if profile_relative:
+        try:
+            profile_path = Path(settings.upload_dir) / profile_relative
+            if profile_path.is_file():
+                profile_path.unlink()
+        except OSError:
+            pass
 
 
 # ── 비밀번호 재설정 (이메일 링크 방식) ────────────────────────────────────────

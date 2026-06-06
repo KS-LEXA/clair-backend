@@ -16,6 +16,7 @@ from app.schemas.auth import (
 from app.schemas.contract import MessageResponse
 from app.services.auth_service import (
     signup, login, refresh_access_token, update_nickname, change_password,
+    delete_account,
     update_profile_image, delete_profile_image, profile_image_url,
     request_password_reset, verify_reset_token, confirm_password_reset,
     request_email_verification, confirm_email_verification,
@@ -76,6 +77,12 @@ def api_update_nickname(body: UpdateNicknameRequest, user: User = Depends(get_cu
 def api_change_password(body: ChangePasswordRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     change_password(user=user, current_password=body.current_password, new_password=body.new_password, db=db)
     return MessageResponse(message="비밀번호가 변경되었습니다.")
+
+
+@router.delete("/me", response_model=MessageResponse, summary="회원 탈퇴 (계정 및 연관 데이터 영구 삭제)")
+def api_delete_account(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    delete_account(user=user, db=db)
+    return MessageResponse(message="회원 탈퇴가 완료되었습니다. 그동안 이용해주셔서 감사합니다.")
 
 
 @router.api_route(
