@@ -10,7 +10,6 @@ from app.schemas.auth import (
     LoginRequest, TokenResponse,
     RefreshRequest, RefreshResponse,
     MyInfoResponse, UpdateNicknameRequest, ChangePasswordRequest,
-    SocialLoginResponse,
     PasswordResetRequest, PasswordResetConfirmRequest, PasswordResetVerifyResponse,
     EmailVerificationRequest, EmailVerificationConfirmRequest,
 )
@@ -23,6 +22,7 @@ from app.services.auth_service import (
     get_google_auth_url, google_login,
     get_naver_auth_url, naver_login,
     get_kakao_auth_url, kakao_login,
+    social_callback_redirect_url,
 )
 
 router = APIRouter()
@@ -139,9 +139,10 @@ def api_google_login():
     return RedirectResponse(url=get_google_auth_url())
 
 
-@router.get("/google/callback", response_model=SocialLoginResponse, summary="구글 소셜 로그인 콜백")
+@router.get("/google/callback", summary="구글 소셜 로그인 콜백 (프론트로 리다이렉트)")
 def api_google_callback(code: str, db: Session = Depends(get_db)):
-    return google_login(code=code, db=db)
+    result = google_login(code=code, db=db)
+    return RedirectResponse(url=social_callback_redirect_url(result))
 
 
 # ── Naver ─────────────────────────────────────────────────────────────────────
@@ -151,9 +152,10 @@ def api_naver_login():
     return RedirectResponse(url=get_naver_auth_url())
 
 
-@router.get("/naver/callback", response_model=SocialLoginResponse, summary="네이버 소셜 로그인 콜백")
+@router.get("/naver/callback", summary="네이버 소셜 로그인 콜백 (프론트로 리다이렉트)")
 def api_naver_callback(code: str, state: str, db: Session = Depends(get_db)):
-    return naver_login(code=code, state=state, db=db)
+    result = naver_login(code=code, state=state, db=db)
+    return RedirectResponse(url=social_callback_redirect_url(result))
 
 
 # ── Kakao ─────────────────────────────────────────────────────────────────────
@@ -163,6 +165,7 @@ def api_kakao_login():
     return RedirectResponse(url=get_kakao_auth_url())
 
 
-@router.get("/kakao/callback", response_model=SocialLoginResponse, summary="카카오 소셜 로그인 콜백")
+@router.get("/kakao/callback", summary="카카오 소셜 로그인 콜백 (프론트로 리다이렉트)")
 def api_kakao_callback(code: str, db: Session = Depends(get_db)):
-    return kakao_login(code=code, db=db)
+    result = kakao_login(code=code, db=db)
+    return RedirectResponse(url=social_callback_redirect_url(result))
