@@ -132,7 +132,14 @@ def api_delete_contract(contract_id: int, user: User = Depends(get_current_user)
     return MessageResponse(message="계약서가 삭제되었습니다.")
 
 
+# 정식 엔드포인트는 /analyze. /request-analysis 는 하위 호환용 별칭 — 둘 다 동일 로직.
 @router.post("/{contract_id}/analyze", response_model=AnalyzeAcceptedResponse, status_code=202, summary="계약서 분석 요청")
+@router.post(
+    "/{contract_id}/request-analysis",
+    response_model=AnalyzeAcceptedResponse,
+    status_code=202,
+    summary="계약서 분석 요청 (호환용 — /analyze 사용 권장)",
+)
 async def api_request_analysis(
     contract_id: int,
     background_tasks: BackgroundTasks,

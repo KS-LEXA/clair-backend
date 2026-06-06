@@ -47,6 +47,7 @@ alembic upgrade head
 | GET | `/{id}` | 계약서 상세 + 분석 결과 + safety_score |
 | DELETE | `/{id}` | 계약서 삭제 |
 | POST | `/{id}/analyze` | 분석 요청 (202 Accepted, 백그라운드 실행) |
+| POST | `/{id}/request-analysis` | `/analyze` 호환용 별칭 (동일 로직) |
 | GET | `/{id}/status` | 분석 상태 조회 |
 | GET | `/{id}/clauses` | 조항 목록 |
 | POST | `/{id}/share` | 공유 링크 생성 |
