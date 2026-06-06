@@ -379,6 +379,20 @@ def _social_login(provider: str, provider_id: str, email: str, nickname: str, db
     }
 
 
+def social_callback_redirect_url(result: dict) -> str:
+    """소셜 로그인 결과(JWT)를 프론트 콜백 페이지 쿼리스트링으로 전달하는 URL.
+
+    프론트는 /social-callback?token=...&refresh_token=... 형태를 기대한다.
+    """
+    params = {
+        "token": result["access_token"],
+        "refresh_token": result["refresh_token"],
+        "is_new_user": str(result.get("is_new_user", False)).lower(),
+    }
+    base = settings.frontend_base_url.rstrip("/")
+    return f"{base}{settings.social_callback_path}?{urlencode(params)}"
+
+
 # ── Google ────────────────────────────────────────────────────────────────────
 
 def get_google_auth_url() -> str:
