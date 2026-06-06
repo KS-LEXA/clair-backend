@@ -1,5 +1,10 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import List
+
+# 프로젝트 루트(.env 위치). uvicorn을 다른 작업 디렉터리에서 실행해도
+# .env 를 항상 찾도록 절대경로로 고정한다. config.py = app/core/config.py 이므로 parents[2] 가 루트.
+_ENV_FILE = str(Path(__file__).resolve().parents[2] / ".env")
 
 
 class Settings(BaseSettings):
@@ -50,6 +55,7 @@ class Settings(BaseSettings):
     mail_from_name: str = "CLAIR"
 
     frontend_base_url: str = "http://localhost:5173"
+    social_callback_path: str = "/social-callback"
     password_reset_path: str = "/password-reset"
     password_reset_token_expire_minutes: int = 30
 
@@ -84,7 +90,7 @@ class Settings(BaseSettings):
     def profile_image_max_size_bytes(self) -> int:
         return self.profile_image_max_size_mb * 1024 * 1024
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+    model_config = {"env_file": _ENV_FILE, "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 settings = Settings()
