@@ -42,7 +42,7 @@ Five routers, all mounted in [app/main.py](app/main.py): `auth`, `contracts`, `c
 - [app/core/config.py](app/core/config.py) — `settings` singleton (Pydantic Settings from `.env`). Single source of truth for all config; has computed properties like `database_url`, `*_list`, `*_bytes`.
 - [app/core/security.py](app/core/security.py) — JWT create/decode, password hashing, and the `get_current_user` dependency (`OAuth2PasswordBearer`). Access token 60 min, refresh 7 days.
 - [app/db/session.py](app/db/session.py) — `engine`, `SessionLocal`, `Base`, and the `get_db()` dependency injected into every DB-touching route.
-- [app/db/init_db.py](app/db/init_db.py) — `init_db()` runs `Base.metadata.create_all()` on startup (lifespan in main.py). **Schema is managed by BOTH this and Alembic** — `create_all` will create any missing table on boot, so a forgotten migration can silently "work" locally; always also write the Alembic migration for schema changes.
+- [app/db/init_db.py](app/db/init_db.py) — `init_db()` runs `Base.metadata.create_all()` on startup (lifespan in main.py). **Schema is managed by THREE mechanisms** — `create_all` (boots any missing table, so a forgotten migration can silently "work" locally), Alembic ([alembic/versions/](alembic/versions/), the source of truth), and hand-written SQL in [scripts/](scripts/) (`migrate_2026_05_*.sql` applied manually against shared/prod DBs) plus the original [database/schema.sql](database/schema.sql). For any schema change, always write the Alembic migration; the raw SQL scripts are a parallel manual track, not auto-applied.
 
 ### Contract analysis flow (async state machine)
 Status: `UPLOADED → PENDING → PROCESSING → COMPLETED / FAILED` (`ContractStatus` enum).
