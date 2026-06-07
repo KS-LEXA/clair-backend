@@ -13,6 +13,7 @@ WeasyPrint(HTML→PDF)를 사용해 Jinja2 템플릿으로 한국어 분석 보�
 """
 import os
 import platform
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -112,6 +113,47 @@ def format_pdf_value(value) -> str:
     return str(value)
 
 
+# 금액 표시 정리 대상 key_info 키 (표시용 — 원본 데이터/API 응답은 그대로 유지)
+MONEY_KEYS = {"amount_text", "amount_value", "hourly_wage", "monthly_wage"}
+
+# 천 단위 콤마를 포함할 수 있는 아라비아 숫자 토큰
+_MONEY_NUM_RE = re.compile(r"\d[\d,]*")
+# 숫자 바로 뒤에 붙는 한국어 단위(만/억/천/조) → 축약 표기로 간주
+_KO_UNIT_RE = re.compile(r"^\s*[만억천조]")
+
+
+def format_money(value) -> str:
+    """금액 값을 프론트 화면처럼 정리: 숫자만 추출해 천 단위 콤마 + '원'.
+
+    예) '금 450,000,000원 (사억오천만원 정)' → '450,000,000원'
+        '450,000,000원 사억오천만원정'       → '450,000,000원'
+        450000000                           → '450,000,000원'
+
+    숫자를 찾지 못하면 pdf_value 규칙으로 폴백하고, '5,000만원'처럼 한국어 단위
+    축약 표기면 잘못된 숫자로 바꾸지 않도록 원본 표현을 그대로 둔다.
+    """
+    if value is None:
+        return "-"
+    if isinstance(value, bool):
+        return format_pdf_value(value)
+    if isinstance(value, (int, float)):
+        num = int(value) if float(value).is_integer() else value
+        return f"{num:,}원"
+    text = str(value).strip()
+    if not text:
+        return "-"
+    m = _MONEY_NUM_RE.search(text)
+    if not m:
+        return format_pdf_value(value)
+    # 숫자 직후가 만/억/천/조 단위면 축약 표기 → 원본 유지 (예: '5,000만원')
+    if _KO_UNIT_RE.match(text[m.end():]):
+        return text
+    digits = m.group(0).replace(",", "")
+    if not digits.isdigit():
+        return format_pdf_value(value)
+    return f"{int(digits):,}원"
+
+
 _jinja_env = Environment(
     loader=FileSystemLoader(_TEMPLATE_DIR),
     autoescape=select_autoescape(["html"]),
@@ -120,6 +162,8 @@ _jinja_env.filters["key_info_label"] = format_key_info_label
 _jinja_env.filters["risk_type_label"] = format_risk_type
 _jinja_env.filters["contract_type_label"] = format_contract_type
 _jinja_env.filters["pdf_value"] = format_pdf_value
+_jinja_env.filters["money"] = format_money
+_jinja_env.globals["MONEY_KEYS"] = MONEY_KEYS
 
 
 def generate_contract_pdf(contract_id: int, user_id: int, db: Session) -> tuple[bytes, str]:
