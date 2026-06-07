@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.contract import Contract, ContractStatus
+from app.models.deleted_contract import DeletedContract
 from app.models.analysis import AnalysisResult, RiskClause, ContractClause, ComplianceResult
 from app.integrations.ai_client import ai_client
 from app.integrations.mappers import (
@@ -211,10 +212,33 @@ def get_contracts_by_user(user_id: int, db: Session, skip: int = 0, limit: int =
 
 def delete_contract(contract_id: int, user_id: int, db: Session) -> None:
     contract = get_contract_by_id(contract_id, user_id, db)
+    # 원본은 hard delete 되므로 삭제 직전 메타데이터를 이력 테이블에 스냅샷으로 남긴다.
+    db.add(DeletedContract(
+        user_id=user_id,
+        original_contract_id=contract.id,
+        original_filename=contract.original_filename,
+        file_type=contract.file_type,
+        contract_type=contract.contract_type.value if contract.contract_type else None,
+        status_at_deletion=contract.status.value if contract.status else None,
+        contract_created_at=contract.created_at,
+    ))
     if os.path.exists(contract.file_path):
         os.remove(contract.file_path)
     db.delete(contract)
     db.commit()
+
+
+def get_deleted_contracts(user_id: int, db: Session, skip: int = 0, limit: int = 20):
+    """본인 계약서 삭제 이력 — 최근 삭제순."""
+    query = db.query(DeletedContract).filter(DeletedContract.user_id == user_id)
+    total = query.count()
+    items = (
+        query.order_by(DeletedContract.deleted_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return total, items
 
 
 def get_clauses(contract_id: int, user_id: int, db: Session) -> list[ContractClause]:

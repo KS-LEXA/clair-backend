@@ -58,6 +58,23 @@ class ContractListResponse(BaseModel):
     contracts: List[ContractListItem]
 
 
+class DeletedContractItem(BaseModel):
+    id: int                              # 이력 행 id
+    original_contract_id: int            # 삭제된 원본 계약서 id
+    original_filename: str
+    file_type: Optional[str] = None
+    contract_type: Optional[str] = None
+    status_at_deletion: Optional[str] = None
+    contract_created_at: Optional[datetime] = None  # 원본 업로드 일시
+    deleted_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class DeletedContractListResponse(BaseModel):
+    total: int
+    deleted_contracts: List[DeletedContractItem]
+
+
 class AnalysisResultResponse(BaseModel):
     key_info: Optional[Any] = None
     clauses: Optional[List[Any]] = None

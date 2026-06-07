@@ -11,6 +11,7 @@ from app.schemas.contract import (
     AnalysisResultResponse, RiskClauseResponse, MessageResponse,
     AnalyzeAcceptedResponse, ContractStatusResponse, ClauseResponse, ClauseListResponse,
     ComplianceResultResponse,
+    DeletedContractListResponse, DeletedContractItem,
 )
 from app.schemas.share import (
     ShareCreateRequest, ShareCreateResponse,
@@ -18,7 +19,7 @@ from app.schemas.share import (
 )
 from app.services.contract_service import (
     upload_contract, upload_contract_from_images,
-    get_contract_by_id, get_contracts_by_user, delete_contract,
+    get_contract_by_id, get_contracts_by_user, delete_contract, get_deleted_contracts,
     trigger_analysis, analyze_contract_background, get_clauses,
 )
 from app.services.share_service import (
@@ -72,6 +73,18 @@ def api_list_contracts(skip: int = Query(0, ge=0), limit: int = Query(20, ge=1, 
                           if c.status.value == "completed" else None),
             created_at=c.created_at, updated_at=c.updated_at)
         for c in contracts])
+
+
+# 주의: 경로 매칭 순서상 /{contract_id} 보다 반드시 먼저 선언해야 한다
+# (그렇지 않으면 "deleted"가 contract_id로 해석됨).
+@router.get("/deleted", response_model=DeletedContractListResponse, summary="계약서 삭제 이력 조회")
+def api_list_deleted_contracts(skip: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100),
+                               user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    total, items = get_deleted_contracts(user_id=user.id, db=db, skip=skip, limit=limit)
+    return DeletedContractListResponse(
+        total=total,
+        deleted_contracts=[DeletedContractItem.model_validate(it) for it in items],
+    )
 
 
 @router.get("/{contract_id}", response_model=ContractDetailResponse, summary="계약서 상세 조회")
