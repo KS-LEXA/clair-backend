@@ -60,15 +60,26 @@ class SharedRiskClause(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SharedComplianceResult(BaseModel):
+    clause_id: str
+    clause_title: Optional[str] = None
+    clause_text: str
+    status: str  # 위반 | 주의 | 적합 | 검토불가
+    reason: Optional[str] = None
+    law_references: Optional[List[Any]] = None
+    model_config = {"from_attributes": True}
+
+
 class SharedAnalysisResult(BaseModel):
     key_info: Optional[Any] = None
     summary: Optional[str] = None
 
 
 class SharedContractResponse(BaseModel):
-    """공유받은 사람에게 노출되는 데이터 — 분석 결과 + 위험 조항 + 근거만."""
+    """공유받은 사람에게 노출되는 데이터 — 분석 결과 + 위험 조항 + 근거 + 법령 준수 검사."""
     contract_id: int
     original_filename: str
     contract_type: str
     analysis: Optional[SharedAnalysisResult] = None
     risk_clauses: List[SharedRiskClause] = []
+    compliance_results: List[SharedComplianceResult] = []
