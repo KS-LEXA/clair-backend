@@ -1,0 +1,4 @@
+# Claude(AI 어시스턴트)의 co-author 크레딧을 실제 작성자(yenim)로 합쳐
+# GitHub 기여자 목록에 별도 인물로 표시되지 않도록 한다.
+# 형식: <표준 이름> <표준 이메일> <원본 이름> <원본 이메일>
+yenim <kimyenim0815@gmail.com> Claude Opus 4.8 <noreply@anthropic.com>
