@@ -97,10 +97,10 @@
           <td class="k">{{ key | key_info_label }}</td>
           <td class="v">
             {% if val is mapping %}
-              {{ val.get('value') | pdf_value }}
+              {% if key in MONEY_KEYS %}{{ val.get('value') | money }}{% else %}{{ val.get('value') | pdf_value }}{% endif %}
               {% if val.get('reason') %}<br><span class="meta">근거: {{ val.get('reason') }}</span>{% endif %}
             {% else %}
-              {{ val | pdf_value }}
+              {% if key in MONEY_KEYS %}{{ val | money }}{% else %}{{ val | pdf_value }}{% endif %}
             {% endif %}
           </td>
         </tr>
