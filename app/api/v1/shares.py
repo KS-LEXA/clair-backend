@@ -4,6 +4,7 @@ from app.db.session import get_db
 from app.schemas.share import (
     ShareVerifyRequest, ShareVerifyResponse,
     SharedContractResponse, SharedAnalysisResult, SharedRiskClause,
+    SharedComplianceResult,
 )
 from app.services.share_service import verify_share_password, get_shared_contract
 
@@ -61,10 +62,23 @@ def api_get_shared_contract(
         for rc in (contract.risk_clauses or [])
     ]
 
+    compliance_results = [
+        SharedComplianceResult(
+            clause_id=cr.clause_id,
+            clause_title=cr.clause_title,
+            clause_text=cr.clause_text,
+            status=cr.status,
+            reason=cr.reason,
+            law_references=cr.law_references,
+        )
+        for cr in (contract.compliance_results or [])
+    ]
+
     return SharedContractResponse(
         contract_id=contract.id,
         original_filename=contract.original_filename,
         contract_type=contract.contract_type.value,
         analysis=analysis,
         risk_clauses=risk_clauses,
+        compliance_results=compliance_results,
     )
