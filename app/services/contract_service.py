@@ -249,17 +249,26 @@ def get_clauses(contract_id: int, user_id: int, db: Session) -> list[ContractCla
     ).order_by(ContractClause.order).all()
 
 
-def trigger_analysis(contract_id: int, user_id: int, db: Session) -> Contract:
+def trigger_analysis(contract_id: int, user_id: int, db: Session, force: bool = False) -> Contract:
     """
     분석 요청 수락 단계.
     상태를 PENDING으로 바꾸고 반환만 한다.
     실제 AI 호출은 analyze_contract_background()가 담당.
+
+    재분석(force) 핵심: 이전 분석의 시작/완료 시각을 즉시 None으로 리셋한다.
+    그래야 새 분석이 진행되는 동안 status/detail 응답이 이전 completed 시각을
+    물고 내려가지 않는다(프론트가 옛 결과를 새 결과로 오인하는 문제 차단).
+    이전 분석 결과 행(AnalysisResult 등)은 그대로 보존했다가 새 분석 완료 시
+    analyze_contract_background()에서 교체한다 — 재분석 실패 시 직전 결과 유지 목적.
     """
     contract = get_contract_by_id(contract_id, user_id, db)
     if contract.status == ContractStatus.PROCESSING:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 분석 중입니다.")
     contract.status = ContractStatus.PENDING
-    contract.analysis_error = None  # 재분석 시 이전 오류 초기화
+    contract.analysis_error = None              # 재분석 시 이전 오류 초기화
+    contract.analysis_requested_at = datetime.now(timezone.utc)  # 새 job 기준 시각
+    contract.analysis_started_at = None         # 이전 job의 시작/완료 시각 무효화
+    contract.analysis_completed_at = None
     db.commit()
     db.refresh(contract)
     return contract
