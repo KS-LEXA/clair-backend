@@ -132,9 +132,6 @@ def api_get_contract(contract_id: int, user: User = Depends(get_current_user), d
                                   file_type=contract.file_type, status=contract.status.value,
                                   analysis_status=contract.status.value, contract_type=contract.contract_type.value,
                                   extracted_text=contract.extracted_text, created_at=contract.created_at, updated_at=contract.updated_at,
-                                  job_id=contract.analysis_job_id,
-                                  analysis_requested_at=contract.analysis_requested_at,
-                                  analysis_updated_at=contract.updated_at,
                                   analysis_completed_at=contract.analysis_completed_at,
                                   analysis=analysis, risk_clauses=risk_clauses,
                                   clauses=clauses, compliance_results=compliance_results,
@@ -159,20 +156,15 @@ def api_delete_contract(contract_id: int, user: User = Depends(get_current_user)
 async def api_request_analysis(
     contract_id: int,
     background_tasks: BackgroundTasks,
-    force: bool = Query(False, description="기존 분석 결과가 있어도 새 분석 job을 강제 생성"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    contract = trigger_analysis(contract_id, user.id, db, force=force)
+    contract = trigger_analysis(contract_id, user.id, db)
     background_tasks.add_task(analyze_contract_background, contract.id)
     return AnalyzeAcceptedResponse(
         message=f"'{contract.original_filename}' 분석이 요청되었습니다.",
-        status=contract.status.value,
+        status="pending",
         poll_url=f"/api/v1/contracts/{contract_id}/status",
-        contract_id=contract.id,
-        job_id=contract.analysis_job_id,
-        analysis_requested_at=contract.analysis_requested_at,
-        force=force,
     )
 
 
@@ -181,12 +173,9 @@ def api_get_analysis_status(contract_id: int, user: User = Depends(get_current_u
     contract = get_contract_by_id(contract_id, user.id, db)
     return ContractStatusResponse(
         contract_id=contract.id,
-        job_id=contract.analysis_job_id,
         status=contract.status.value,
         contract_type=contract.contract_type.value,
-        analysis_requested_at=contract.analysis_requested_at,
         analysis_started_at=contract.analysis_started_at,
-        analysis_updated_at=contract.updated_at,
         analysis_completed_at=contract.analysis_completed_at,
         error=contract.analysis_error,
     )

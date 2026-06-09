@@ -27,10 +27,6 @@ class ContractDetailResponse(BaseModel):
     extracted_text: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    # 분석 job 식별/신선도 — 재분석 시 프론트가 최신 결과 여부를 검증하는 데 사용.
-    job_id: Optional[str] = None
-    analysis_requested_at: Optional[datetime] = None
-    analysis_updated_at: Optional[datetime] = None
     analysis_completed_at: Optional[datetime] = None
     analysis: Optional["AnalysisResultResponse"] = None
     risk_clauses: Optional[List["RiskClauseResponse"]] = None
@@ -135,25 +131,13 @@ class AnalyzeAcceptedResponse(BaseModel):
     message: str
     status: str
     poll_url: str
-    contract_id: int
-    # 이번 분석 job 식별자 (contract_id + 요청 시각으로 파생). 재분석마다 새 값.
-    job_id: Optional[str] = None
-    analysis_requested_at: Optional[datetime] = None
-    # 재분석 강제 요청 여부 (프론트가 보낸 force 플래그 에코)
-    force: bool = False
 
 
 class ContractStatusResponse(BaseModel):
     contract_id: int
-    # 폴링 중인 상태가 어느 job의 것인지 식별 — analyze 응답의 job_id와 비교
-    job_id: Optional[str] = None
     status: str
     contract_type: Optional[str] = None
-    analysis_requested_at: Optional[datetime] = None
     analysis_started_at: Optional[datetime] = None
-    # 마지막 상태 변경 시각 (Contract.updated_at). 진행 갱신 추적용.
-    analysis_updated_at: Optional[datetime] = None
-    # 재분석 중에는 None. status==completed 이고 이 값이 requested_at 이후일 때만 신뢰.
     analysis_completed_at: Optional[datetime] = None
     error: Optional[str] = None
     model_config = {"from_attributes": True}
