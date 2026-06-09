@@ -1,6 +1,26 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, PlainSerializer
 from typing import Optional, List, Any
-from datetime import datetime
+from typing_extensions import Annotated
+from datetime import datetime, timezone
+
+
+def _serialize_utc(dt: Optional[datetime]) -> Optional[str]:
+    """
+    MySQL DATETIME은 타임존 정보를 저장하지 않아 naive datetime으로 읽힌다.
+    백엔드는 UTC 벽시계(datetime.now(timezone.utc))로 저장하므로, 직렬화 시
+    UTC 오프셋을 명시해 프론트(JS new Date())가 로컬시간(KST)으로 오해하지 않게 한다.
+    이 오프셋이 없으면 analysis_completed_at이 9시간 과거로 파싱돼
+    프론트의 '새 분석 완료' 시각 비교가 실패한다(계약서 관리 화면 로딩 90% 멈춤 원인).
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
+# 타임존(UTC)을 명시해 직렬화하는 datetime 타입 — 모든 응답의 시각 필드에 사용
+UTCDateTime = Annotated[datetime, PlainSerializer(_serialize_utc, when_used="json")]
 
 
 class ContractUploadResponse(BaseModel):
@@ -9,7 +29,7 @@ class ContractUploadResponse(BaseModel):
     file_size: int
     file_type: str
     status: str
-    created_at: datetime
+    created_at: UTCDateTime
     message: str = "계약서가 성공적으로 업로드되었습니다."
     model_config = {"from_attributes": True}
 
@@ -25,9 +45,9 @@ class ContractDetailResponse(BaseModel):
     analysis_status: str
     contract_type: str
     extracted_text: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-    analysis_completed_at: Optional[datetime] = None
+    created_at: UTCDateTime
+    updated_at: UTCDateTime
+    analysis_completed_at: Optional[UTCDateTime] = None
     analysis: Optional["AnalysisResultResponse"] = None
     risk_clauses: Optional[List["RiskClauseResponse"]] = None
     clauses: Optional[List["ClauseResponse"]] = None
@@ -48,8 +68,8 @@ class ContractListItem(BaseModel):
     # 분석 완료(COMPLETED) 계약서만 0~100 정수, 그 외에는 null.
     # 상세 API(GET /contracts/{id})의 safety_score와 동일 기준(compute_safety_score)
     safety_score: Optional[int] = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: UTCDateTime
+    updated_at: UTCDateTime
     model_config = {"from_attributes": True}
 
 
@@ -65,8 +85,8 @@ class DeletedContractItem(BaseModel):
     file_type: Optional[str] = None
     contract_type: Optional[str] = None
     status_at_deletion: Optional[str] = None
-    contract_created_at: Optional[datetime] = None  # 원본 업로드 일시
-    deleted_at: datetime
+    contract_created_at: Optional[UTCDateTime] = None  # 원본 업로드 일시
+    deleted_at: UTCDateTime
     model_config = {"from_attributes": True}
 
 
@@ -80,7 +100,7 @@ class AnalysisResultResponse(BaseModel):
     clauses: Optional[List[Any]] = None
     summary: Optional[str] = None
     detected_objects: Optional[List[Any]] = None
-    created_at: datetime
+    created_at: UTCDateTime
     model_config = {"from_attributes": True}
 
 
@@ -137,8 +157,8 @@ class ContractStatusResponse(BaseModel):
     contract_id: int
     status: str
     contract_type: Optional[str] = None
-    analysis_started_at: Optional[datetime] = None
-    analysis_completed_at: Optional[datetime] = None
+    analysis_started_at: Optional[UTCDateTime] = None
+    analysis_completed_at: Optional[UTCDateTime] = None
     error: Optional[str] = None
     model_config = {"from_attributes": True}
 
