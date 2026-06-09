@@ -14,7 +14,6 @@ WeasyPrint(HTML→PDF)를 사용해 Jinja2 템플릿으로 한국어 분석 보�
 import os
 import platform
 import re
-from datetime import datetime
 from pathlib import Path
 
 # WeasyPrint import 전에 macOS 라이브러리 경로 설정 — 순서 중요
@@ -205,7 +204,6 @@ def generate_contract_pdf(contract_id: int, user_id: int, db: Session) -> tuple[
         original_filename=contract.original_filename,
         contract_type=contract.contract_type.value,
         analyzed_at=contract.analysis_completed_at or contract.updated_at,
-        generated_at=datetime.now(),
         key_info=(analysis.key_info if analysis else None),
         summary=(analysis.summary if analysis else None),
         risk_clauses=risk_clauses,
