@@ -58,9 +58,6 @@ class Contract(Base):
     ocr_pages = Column(JSON, nullable=True)               # [{page_index, text}] 페이지별 OCR 결과
     # 분석 오류
     analysis_error = Column(Text, nullable=True)          # 분석 실패 사유
-    # 분석(재분석 포함) 요청 시각 — 새 분석 job의 기준 시각.
-    # 재분석 신선도 판별의 앵커: 완료 시각이 이 값 이후여야 "이번 요청의 결과"다.
-    analysis_requested_at = Column(DateTime, nullable=True)
     # 분석 시작 시간
     analysis_started_at = Column(DateTime, nullable=True)
     # 분석 완료 시간
@@ -83,14 +80,3 @@ class Contract(Base):
     clauses = relationship("ContractClause", back_populates="contract", cascade="all, delete-orphan")
     # 법령 준수 검사 결과 (1:N 관계)
     compliance_results = relationship("ComplianceResult", back_populates="contract", cascade="all, delete-orphan")
-
-    @property
-    def analysis_job_id(self):
-        """현재 분석 job 식별자 — 별도 컬럼 없이 contract_id + 요청 시각으로 파생.
-
-        매 분석 요청마다 analysis_requested_at이 갱신되므로 job_id도 새로 바뀐다.
-        프론트가 "지금 폴링 중인 상태가 내가 방금 요청한 job의 것인지" 확인하는 데 사용.
-        """
-        if self.analysis_requested_at is None:
-            return None
-        return f"{self.id}-{int(self.analysis_requested_at.timestamp())}"
