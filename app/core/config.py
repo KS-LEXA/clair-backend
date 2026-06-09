@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     gemini_api_key: str = ""
     ai_service_url: str = "http://localhost:8001"
-    ai_service_timeout: float = 120.0   # OCR+LLM 분석은 최대 2분 허용
+    ai_service_timeout: float = 600.0   # OCR+다단계 LLM 분석이 최대 ~5분 소요 — 여유 있게 10분 허용
     cors_origins: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:3000"
 
     google_client_id: str = ""
