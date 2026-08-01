@@ -1,0 +1,178 @@
+from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi.responses import RedirectResponse
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from app.db.session import get_db
+from app.core.security import get_current_user
+from app.models.user import User
+from app.schemas.auth import (
+    SignUpRequest, SignUpResponse,
+    LoginRequest, TokenResponse,
+    RefreshRequest, RefreshResponse,
+    MyInfoResponse, UpdateNicknameRequest, ChangePasswordRequest,
+    PasswordResetRequest, PasswordResetConfirmRequest, PasswordResetVerifyResponse,
+    EmailVerificationRequest, EmailVerificationConfirmRequest,
+)
+from app.schemas.contract import MessageResponse
+from app.services.auth_service import (
+    signup, login, refresh_access_token, update_nickname, change_password,
+    delete_account,
+    update_profile_image, delete_profile_image, profile_image_url,
+    request_password_reset, verify_reset_token, confirm_password_reset,
+    request_email_verification, confirm_email_verification,
+    get_google_auth_url, google_login,
+    get_naver_auth_url, naver_login,
+    get_kakao_auth_url, kakao_login,
+    social_callback_redirect_url,
+)
+
+router = APIRouter()
+
+
+def _to_my_info(user: User) -> MyInfoResponse:
+    return MyInfoResponse(
+        id=user.id,
+        email=user.email,
+        nickname=user.nickname,
+        has_password=user.password_hash is not None,
+        profile_image=profile_image_url(user),
+        marketing_agreed=user.marketing_agreed,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+    )
+
+
+@router.post("/signup", response_model=SignUpResponse, status_code=201, summary="회원가입")
+def api_signup(body: SignUpRequest, db: Session = Depends(get_db)):
+    user = signup(email=body.email, nickname=body.nickname, password=body.password, db=db, marketing_agreed=body.marketing_agreed)
+    return SignUpResponse(id=user.id, email=user.email, nickname=user.nickname, marketing_agreed=user.marketing_agreed, created_at=user.created_at)
+
+
+@router.post("/login", summary="로그인 (Swagger 자물쇠 겸용)")
+def api_login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    return login(email=form_data.username, password=form_data.password, db=db)
+
+
+@router.post("/login/json", response_model=TokenResponse, summary="로그인 (JSON)")
+def api_login_json(body: LoginRequest, db: Session = Depends(get_db)):
+    return login(email=body.email, password=body.password, db=db)
+
+
+@router.post("/refresh", response_model=RefreshResponse, summary="토큰 갱신")
+def api_refresh(body: RefreshRequest, db: Session = Depends(get_db)):
+    return refresh_access_token(refresh_token=body.refresh_token, db=db)
+
+
+@router.get("/me", response_model=MyInfoResponse, summary="내 정보 조회")
+def api_my_info(user: User = Depends(get_current_user)):
+    return _to_my_info(user)
+
+
+@router.patch("/me/nickname", response_model=MyInfoResponse, summary="닉네임 변경")
+def api_update_nickname(body: UpdateNicknameRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _to_my_info(update_nickname(user, body.nickname, db))
+
+
+@router.patch("/me/password", response_model=MessageResponse, summary="비밀번호 변경")
+def api_change_password(body: ChangePasswordRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    change_password(user=user, current_password=body.current_password, new_password=body.new_password, db=db)
+    return MessageResponse(message="비밀번호가 변경되었습니다.")
+
+
+@router.delete("/me", response_model=MessageResponse, summary="회원 탈퇴 (계정 및 연관 데이터 영구 삭제)")
+def api_delete_account(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    delete_account(user=user, db=db)
+    return MessageResponse(message="회원 탈퇴가 완료되었습니다. 그동안 이용해주셔서 감사합니다.")
+
+
+@router.api_route(
+    "/me/profile-image",
+    methods=["POST", "PATCH"],
+    response_model=MyInfoResponse,
+    summary="프로필 이미지 업로드/수정",
+)
+async def api_upload_profile_image(
+    file: UploadFile = File(..., description="프로필 이미지 (PNG/JPG/JPEG/WEBP, 최대 5MB)"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return _to_my_info(await update_profile_image(user=user, file=file, db=db))
+
+
+@router.delete("/me/profile-image", response_model=MyInfoResponse, summary="프로필 이미지 삭제")
+def api_delete_profile_image(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _to_my_info(delete_profile_image(user=user, db=db))
+
+
+# ── 비밀번호 재설정 (비로그인 상태에서 이메일 링크로) ─────────────────────────
+
+@router.post("/password-reset/request", response_model=MessageResponse, summary="비밀번호 재설정 요청 (메일 발송)")
+async def api_request_password_reset(body: PasswordResetRequest, db: Session = Depends(get_db)):
+    # 보안상 사용자 존재 여부와 무관하게 동일 메시지 반환
+    await request_password_reset(email=body.email, db=db)
+    return MessageResponse(message="입력하신 이메일로 재설정 안내가 발송되었습니다. 메일이 오지 않으면 스팸함을 확인해주세요.")
+
+
+@router.get("/password-reset/verify", response_model=PasswordResetVerifyResponse, summary="재설정 토큰 유효성 검증")
+def api_verify_reset_token(token: str, db: Session = Depends(get_db)):
+    user = verify_reset_token(raw_token=token, db=db)
+    return PasswordResetVerifyResponse(valid=True, email=user.email)
+
+
+@router.post("/password-reset/confirm", response_model=MessageResponse, summary="비밀번호 재설정 확정")
+def api_confirm_password_reset(body: PasswordResetConfirmRequest, db: Session = Depends(get_db)):
+    confirm_password_reset(raw_token=body.token, new_password=body.new_password, db=db)
+    return MessageResponse(message="비밀번호가 재설정되었습니다. 새 비밀번호로 로그인해주세요.")
+
+
+# ── 회원가입 이메일 인증 (가입 전 6자리 코드 확인) ─────────────────────────────
+
+@router.post("/email-verification/request", response_model=MessageResponse, summary="이메일 인증 코드 발송")
+async def api_request_email_verification(body: EmailVerificationRequest, db: Session = Depends(get_db)):
+    await request_email_verification(email=body.email, db=db)
+    return MessageResponse(message="입력하신 이메일로 인증 코드를 발송했습니다. 메일이 오지 않으면 스팸함을 확인해주세요.")
+
+
+@router.post("/email-verification/confirm", response_model=MessageResponse, summary="이메일 인증 코드 확인")
+def api_confirm_email_verification(body: EmailVerificationConfirmRequest, db: Session = Depends(get_db)):
+    confirm_email_verification(email=body.email, code=body.code, db=db)
+    return MessageResponse(message="이메일 인증이 완료되었습니다. 회원가입을 진행해주세요.")
+
+
+# ── Google ────────────────────────────────────────────────────────────────────
+
+@router.get("/google", summary="구글 소셜 로그인 시작")
+def api_google_login():
+    return RedirectResponse(url=get_google_auth_url())
+
+
+@router.get("/google/callback", summary="구글 소셜 로그인 콜백 (프론트로 리다이렉트)")
+def api_google_callback(code: str, db: Session = Depends(get_db)):
+    result = google_login(code=code, db=db)
+    return RedirectResponse(url=social_callback_redirect_url(result))
+
+
+# ── Naver ─────────────────────────────────────────────────────────────────────
+
+@router.get("/naver", summary="네이버 소셜 로그인 시작")
+def api_naver_login():
+    return RedirectResponse(url=get_naver_auth_url())
+
+
+@router.get("/naver/callback", summary="네이버 소셜 로그인 콜백 (프론트로 리다이렉트)")
+def api_naver_callback(code: str, state: str, db: Session = Depends(get_db)):
+    result = naver_login(code=code, state=state, db=db)
+    return RedirectResponse(url=social_callback_redirect_url(result))
+
+
+# ── Kakao ─────────────────────────────────────────────────────────────────────
+
+@router.get("/kakao", summary="카카오 소셜 로그인 시작")
+def api_kakao_login():
+    return RedirectResponse(url=get_kakao_auth_url())
+
+
+@router.get("/kakao/callback", summary="카카오 소셜 로그인 콜백 (프론트로 리다이렉트)")
+def api_kakao_callback(code: str, db: Session = Depends(get_db)):
+    result = kakao_login(code=code, db=db)
+    return RedirectResponse(url=social_callback_redirect_url(result))

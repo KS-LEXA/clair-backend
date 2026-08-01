@@ -1,5 +1,11 @@
 __pycache__/
 .pytest_cache/
 .venv/
+venv/
 .DS_Store
 .env
+uploads/
+
+# macOS 리소스 포크 메타데이터 (non-APFS 볼륨에서 생성됨)
+._*
+.DS_Store

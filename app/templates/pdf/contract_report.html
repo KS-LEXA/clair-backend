@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ original_filename }} - 분석 보고서</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 22mm 18mm 22mm 18mm;
+      @bottom-center {
+        content: counter(page) " / " counter(pages);
+        font-size: 9pt;
+        color: #999;
+      }
+    }
+    body {
+      font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "맑은 고딕", "NanumGothic", "Helvetica Neue", Helvetica, sans-serif;
+      color: #1f2937;
+      font-size: 10.5pt;
+      line-height: 1.55;
+    }
+    h1 { font-size: 20pt; margin: 0 0 4px 0; color: #111827; }
+    h2 { font-size: 13pt; margin: 22px 0 10px 0; color: #111827; border-bottom: 2px solid #2563eb; padding-bottom: 4px; }
+    h3 { font-size: 11pt; margin: 14px 0 6px 0; color: #1f2937; }
+    .meta { color: #6b7280; font-size: 10pt; }
+    .header { margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid #e5e7eb; }
+    .label { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 9pt; font-weight: 600; }
+    .label-contract-type { background: #eff6ff; color: #1d4ed8; }
+
+    table.kv { width: 100%; border-collapse: collapse; margin: 8px 0; }
+    table.kv td { padding: 7px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+    table.kv td.k { width: 30%; color: #6b7280; font-weight: 500; }
+    table.kv td.v { color: #111827; }
+
+    .summary-box { background: #f9fafb; border-left: 3px solid #2563eb; padding: 12px 14px; margin: 8px 0; border-radius: 0 6px 6px 0; }
+
+    .risk-card {
+      border: 1px solid #e5e7eb;
+      border-left-width: 4px;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin: 10px 0;
+      page-break-inside: avoid;
+    }
+    .risk-high   { border-left-color: #dc2626; background: #fef2f2; }
+    .risk-medium { border-left-color: #d97706; background: #fffbeb; }
+    .risk-low    { border-left-color: #059669; background: #ecfdf5; }
+    .risk-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 9pt;
+      font-weight: 600;
+      margin-right: 6px;
+    }
+    .badge-high   { background: #dc2626; color: white; }
+    .badge-medium { background: #d97706; color: white; }
+    .badge-low    { background: #059669; color: white; }
+    .risk-meta { color: #6b7280; font-size: 9.5pt; margin-bottom: 4px; }
+    .risk-explanation { margin: 6px 0; }
+    .evidence { background: rgba(255,255,255,0.7); border: 1px dashed #d1d5db; border-radius: 4px; padding: 8px 10px; margin-top: 6px; font-size: 9.5pt; color: #4b5563; }
+    .evidence .lbl { font-weight: 600; color: #6b7280; }
+
+    .clause {
+      page-break-inside: avoid;
+      margin: 10px 0 16px 0;
+      padding: 10px 12px;
+      background: #fafafa;
+      border-radius: 6px;
+    }
+    .clause .num { color: #2563eb; font-weight: 600; font-size: 9.5pt; }
+    .clause .title { font-weight: 600; margin: 2px 0 6px 0; }
+    .clause .text { white-space: pre-wrap; font-size: 10pt; color: #374151; }
+
+    .empty { color: #9ca3af; font-style: italic; padding: 6px 0; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>{{ original_filename }}</h1>
+    <div class="meta">
+      <span class="label label-contract-type">{{ contract_type | contract_type_label }}</span>
+      &nbsp;
+      분석일: {{ analyzed_at.strftime('%Y-%m-%d %H:%M') if analyzed_at else '-' }}
+    </div>
+  </div>
+
+  {# ─── 1. 핵심 정보 ─────────────────────────────────────────────── #}
+  <h2>1. 핵심 정보</h2>
+  {% if key_info %}
+    <table class="kv">
+      {% for key, val in key_info.items() %}
+        <tr>
+          <td class="k">{{ key | key_info_label }}</td>
+          <td class="v">
+            {% if val is mapping %}
+              {% if key in MONEY_KEYS %}{{ val.get('value') | money }}{% else %}{{ val.get('value') | pdf_value }}{% endif %}
+              {% if val.get('reason') %}<br><span class="meta">근거: {{ val.get('reason') }}</span>{% endif %}
+            {% else %}
+              {% if key in MONEY_KEYS %}{{ val | money }}{% else %}{{ val | pdf_value }}{% endif %}
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <div class="empty">추출된 핵심 정보가 없습니다.</div>
+  {% endif %}
+
+  {# ─── 2. AI 요약 ──────────────────────────────────────────────── #}
+  <h2>2. AI 요약</h2>
+  {% if summary %}
+    <div class="summary-box">{{ summary }}</div>
+  {% else %}
+    <div class="empty">요약이 없습니다.</div>
+  {% endif %}
+
+  {# ─── 3. 위험 조항 ────────────────────────────────────────────── #}
+  <h2>3. 위험 조항 ({{ risk_clauses|length }}건)</h2>
+  {% if risk_clauses %}
+    {% for r in risk_clauses %}
+      <div class="risk-card risk-{{ r.risk_level }}">
+        <div class="risk-meta">
+          <span class="risk-badge badge-{{ r.risk_level }}">위험도 {{ r.risk_level_label }}</span>
+          <strong>{{ r.risk_type | risk_type_label }}</strong>
+          {% if r.clause_number %}&nbsp;·&nbsp;{{ r.clause_number }}{% endif %}
+        </div>
+        {% if r.explanation %}
+          <div class="risk-explanation">{{ r.explanation }}</div>
+        {% endif %}
+        {% if r.evidence_text %}
+          <div class="evidence">
+            <span class="lbl">근거:</span> {{ r.evidence_text }}
+            {% if r.evidence_clause_ids %}
+              <br><span class="lbl">참조 조항:</span> {{ r.evidence_clause_ids|join(', ') }}
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">탐지된 위험 조항이 없습니다.</div>
+  {% endif %}
+
+  {# ─── 4. 조항 전문 ────────────────────────────────────────────── #}
+  <h2>4. 조항 전문 ({{ clauses|length }}개)</h2>
+  {% if clauses %}
+    {% for c in clauses %}
+      <div class="clause">
+        <div class="num">{{ c.clause_id }}</div>
+        {% if c.title %}<div class="title">{{ c.title }}</div>{% endif %}
+        <div class="text">{{ c.text }}</div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">조항이 없습니다.</div>
+  {% endif %}
+
+</body>
+</html>
