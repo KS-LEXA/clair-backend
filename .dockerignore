@@ -1,0 +1,14 @@
+.git
+.github
+venv
+__pycache__
+**/__pycache__
+*.pyc
+._*
+.DS_Store
+.env
+uploads
+tests
+database
+scripts
+clair-frontend
