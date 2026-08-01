@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     mail_from: str = ""
     mail_from_name: str = "CLAIR"
 
+    # AI 분석 남용 방지 — 사용자당 분석 요청 횟수 제한.
+    # Gemini 호출은 건당 실비가 발생하므로, clair-ai의 월 예산 상한과 함께
+    # 2단 방어를 구성한다. 0 이하로 두면 해당 제한을 끈다.
+    analysis_rate_limit_per_hour: int = 3
+    analysis_rate_limit_per_day: int = 10
+
     frontend_base_url: str = "http://localhost:5173"
     social_callback_path: str = "/social-callback"
     password_reset_path: str = "/password-reset"

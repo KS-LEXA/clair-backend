@@ -13,6 +13,28 @@ from app.core.config import settings
 from app.integrations.ai_models import AIAnalysisResponse, AIQAResponse
 
 
+def _raise_for_status(resp: httpx.Response) -> None:
+    """오류 응답을 clair-ai가 보낸 detail 문구와 함께 올린다.
+
+    httpx의 raise_for_status()는 상태 코드만 담아 본문의 detail을 버린다.
+    예산 소진(429) 같은 케이스에서 사용자가 원인을 알 수 있어야 하므로,
+    detail이 있으면 그것을 예외 메시지로 쓴다. 이 메시지는 분석 실패 시
+    contract.analysis_error와 알림에 그대로 노출된다.
+    """
+    if not resp.is_error:
+        return
+    detail = None
+    try:
+        payload = resp.json()
+        if isinstance(payload, dict):
+            detail = payload.get("detail")
+    except Exception:
+        detail = None
+    if detail:
+        raise httpx.HTTPStatusError(str(detail), request=resp.request, response=resp)
+    resp.raise_for_status()
+
+
 class AIServiceClient:
     def __init__(self, base_url: str, timeout: float):
         self.base_url = base_url.rstrip("/")
@@ -37,7 +59,7 @@ class AIServiceClient:
                     "document_id": document_id,
                 },
             )
-            resp.raise_for_status()
+            _raise_for_status(resp)
             return AIAnalysisResponse.model_validate(resp.json())
 
     async def answer_question(
@@ -60,7 +82,7 @@ class AIServiceClient:
                     "clauses": clauses,
                 },
             )
-            resp.raise_for_status()
+            _raise_for_status(resp)
             return AIQAResponse.model_validate(resp.json())
 
     async def health_check(self) -> bool:
