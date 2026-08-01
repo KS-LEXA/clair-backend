@@ -249,6 +249,43 @@ def get_clauses(contract_id: int, user_id: int, db: Session) -> list[ContractCla
     ).order_by(ContractClause.order).all()
 
 
+def _enforce_analysis_rate_limit(user_id: int, db: Session) -> None:
+    """사용자당 분석 요청 횟수를 제한한다.
+
+    Gemini 호출은 건당 실비가 발생하므로, 한 사용자가 짧은 시간에 예산을
+    소진하는 것을 막는다. 전체 예산 상한은 clair-ai가 별도로 강제한다.
+
+    직전 분석 시작 시각(analysis_started_at)을 기준으로 센다. 백그라운드
+    태스크가 시작될 때 채워지므로 아주 짧은 순간에는 과소 집계될 수 있으나,
+    최종 방어선은 clair-ai의 월 예산 가드다.
+    """
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    windows = (
+        ("시간", settings.analysis_rate_limit_per_hour, now - timedelta(hours=1)),
+        ("일", settings.analysis_rate_limit_per_day, now - timedelta(days=1)),
+    )
+
+    for unit, limit, since in windows:
+        if limit <= 0:
+            continue
+        used = (
+            db.query(Contract)
+            .filter(
+                Contract.user_id == user_id,
+                Contract.analysis_started_at.isnot(None),
+                Contract.analysis_started_at >= since,
+            )
+            .count()
+        )
+        if used >= limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"분석 요청 한도를 초과했습니다. 1{unit}당 {limit}회까지 요청할 수 있습니다.",
+            )
+
+
 def trigger_analysis(contract_id: int, user_id: int, db: Session) -> Contract:
     """
     분석 요청 수락 단계.
@@ -256,6 +293,7 @@ def trigger_analysis(contract_id: int, user_id: int, db: Session) -> Contract:
     실제 AI 호출은 analyze_contract_background()가 담당.
     """
     contract = get_contract_by_id(contract_id, user_id, db)
+    _enforce_analysis_rate_limit(user_id, db)
     if contract.status == ContractStatus.PROCESSING:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 분석 중입니다.")
     contract.status = ContractStatus.PENDING
